@@ -1,0 +1,11 @@
+# Non-confidential data. Unverified images allowed (still sandboxed), relaxed output rules.
+name: standard
+tier: standard
+require_verified: false
+allowed_ops: [translate, summarize, extract, classify, ocr, transcribe, custom]
+memory: 16g
+timeout_seconds: 600
+audit: true
+output:
+  max_chars: 2000000
+  max_verbatim_span_words: 0

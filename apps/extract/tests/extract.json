@@ -1,0 +1,5 @@
+[
+  {"input": "On 12 March 2026, Acme GmbH signed a supply agreement with Nordwind AB for EUR 250,000. Contact: Maria Lindqvist.",
+   "params": {}, "expect": {"json_keys": ["organizations", "people", "dates", "amounts"], "contains_any": ["Acme", "Nordwind"]}},
+  {"input": "", "params": {}, "expect": {"ok": false}}
+]

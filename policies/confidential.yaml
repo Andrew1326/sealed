@@ -1,0 +1,12 @@
+# Default policy for confidential data. Only verified apps, strict output rules, full audit.
+name: confidential
+tier: confidential
+require_verified: true
+allowed_ops: [translate, summarize, extract, classify, ocr, transcribe]
+memory: 8g
+timeout_seconds: 300
+audit: true
+output:
+  max_chars: 200000
+  # for summarize/extract/classify: block outputs that copy more than this many consecutive input words
+  max_verbatim_span_words: 40

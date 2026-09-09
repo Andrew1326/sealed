@@ -1,0 +1,12 @@
+{
+  "name": "extract-qwen",
+  "version": "0.1.0",
+  "description": "Offline structured extraction and summarization with Qwen2.5-1.5B-Instruct (CPU).",
+  "vendor": "sealed (community)",
+  "license": "Apache-2.0",
+  "operations": ["extract", "summarize"],
+  "input": "text/plain",
+  "output": "application/json",
+  "requires": {"gpu": "none", "memory": "8g", "timeout_seconds": 600},
+  "models": [{"id": "Qwen/Qwen2.5-1.5B-Instruct", "license": "Apache-2.0"}]
+}

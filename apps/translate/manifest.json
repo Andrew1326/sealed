@@ -1,0 +1,19 @@
+{
+  "name": "translate-marian",
+  "version": "0.1.0",
+  "description": "Offline neural translation (Helsinki-NLP OPUS-MT). Pairs: en-de, de-en, en-ru, ru-en, en-fr, fr-en.",
+  "vendor": "sealed (community)",
+  "license": "Apache-2.0",
+  "operations": ["translate"],
+  "input": "text/plain",
+  "output": "text/plain",
+  "requires": {"gpu": "none", "memory": "4g", "timeout_seconds": 300},
+  "models": [
+    {"id": "Helsinki-NLP/opus-mt-en-de", "license": "CC-BY-4.0"},
+    {"id": "Helsinki-NLP/opus-mt-de-en", "license": "CC-BY-4.0"},
+    {"id": "Helsinki-NLP/opus-mt-en-ru", "license": "CC-BY-4.0"},
+    {"id": "Helsinki-NLP/opus-mt-ru-en", "license": "CC-BY-4.0"},
+    {"id": "Helsinki-NLP/opus-mt-en-fr", "license": "CC-BY-4.0"},
+    {"id": "Helsinki-NLP/opus-mt-fr-en", "license": "CC-BY-4.0"}
+  ]
+}

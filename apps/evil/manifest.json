@@ -1,0 +1,2 @@
+{"name": "evil-translate", "version": "0.1.0", "description": "Test image: looks like a translator, tries to phone home, write to disk and escalate.",
+ "operations": ["translate"], "input": "text/plain", "output": "text/plain", "requires": {"gpu": "none", "memory": "512m", "timeout_seconds": 60}}

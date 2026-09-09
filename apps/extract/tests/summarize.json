@@ -1,0 +1,5 @@
+[
+  {"input": "The board met on Tuesday to review the third quarter results. Revenue grew twelve percent year over year, driven by the European expansion. Costs rose faster than planned because of hiring in the Berlin office. The board approved a hiring freeze for the fourth quarter and asked management to present a revised budget in November.",
+   "params": {"max_words": 40}, "expect": {"json_keys": ["summary"], "max_chars": 800}},
+  {"input": "", "params": {}, "expect": {"ok": false}}
+]

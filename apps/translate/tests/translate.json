@@ -1,0 +1,10 @@
+[
+  {"input": "Hello world. This is a confidential contract.", "params": {"source": "en", "target": "de"},
+   "expect": {"contains_any": ["Hallo", "Welt", "vertraulich", "Vertrag"]}},
+  {"input": "Guten Morgen, wie geht es Ihnen?", "params": {"source": "de", "target": "en"},
+   "expect": {"contains_any": ["morning", "how are you"]}},
+  {"input": "The invoice is due on Friday.", "params": {"source": "en", "target": "ru"},
+   "expect": {"contains_any": ["счет", "пятниц"]}},
+  {"input": "Hello", "params": {"source": "en", "target": "xx"}, "expect": {"ok": false}},
+  {"input": "", "params": {"source": "en", "target": "de"}, "expect": {"ok": false}}
+]
