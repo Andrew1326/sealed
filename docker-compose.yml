@@ -4,10 +4,9 @@ services:
     image: sealed/gateway:0.0.1
     ports: ["127.0.0.1:8470:8470"]
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock   # needed to launch sandboxes; the gateway itself never touches app data
-      - sealed-state:/var/lib/sealed                # allowlist, verification reports, audit log
+      - /var/run/docker.sock:/var/run/docker.sock       # needed to launch sandboxes; the gateway never touches app data
+      - ${HOME}/.sealed:${HOME}/.sealed                  # allowlist, reports, audit log, verify tools (same path on host and in container)
     environment:
+      SEALED_HOME: ${HOME}/.sealed
       SEALED_GPU: "0"
     restart: unless-stopped
-volumes:
-  sealed-state:

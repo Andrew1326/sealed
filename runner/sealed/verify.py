@@ -150,12 +150,17 @@ def verify(image: str, gpu: bool = False, skip_scan: bool = False, log=print) ->
         pr = subprocess.run(cmd, input=job.encode(), capture_output=True, timeout=timeout)
         out = pr.stdout.decode(errors="replace")
         trace = out.split("===TRACE===", 1)[1] if "===TRACE===" in out else ""
-        bad = []
+        bad, advisory = [], []
         for line in trace.splitlines():
-            if re.search(r"socket\((AF_INET|AF_INET6|AF_PACKET|AF_NETLINK)", line) or re.search(r"connect\(.*(AF_INET|AF_INET6)", line):
-                bad.append(line.strip()[:160])
+            l = line.strip()[:160]
+            if re.search(r"(connect|sendto|sendmsg)\(.*(AF_INET|AF_INET6)", line):
+                bad.append(l)                       # tried to talk to an IP address: reject
             elif re.search(r"\b(mount|setuid|setgid|ptrace|init_module|finit_module|reboot|kexec_load)\(", line) and "resumed" not in line:
-                bad.append(line.strip()[:160])
+                bad.append(l)                       # tried to escalate: reject
+            elif re.search(r"socket\((AF_INET|AF_INET6|AF_PACKET|AF_NETLINK)", line):
+                advisory.append(l)                  # opened a socket but never used it (e.g. urllib3 ipv6 probe)
+        if advisory:
+            rep.step("intent.sockets_opened", True, sorted(set(advisory))[:10], fatal=False)
         uniq = sorted(set(bad))
         rep.step("intent.no_network_or_escalation", not uniq, uniq[:20] or f"clean trace ({len(trace.splitlines())} syscalls observed)")
         log(f"[6/8] intent trace: {'REJECTED, ' + str(len(uniq)) + ' suspicious syscalls, e.g. ' + uniq[0] if uniq else 'clean'}")

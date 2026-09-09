@@ -6,6 +6,6 @@ COPY runner/ runner/
 COPY spec/ spec/
 COPY policies/ policies/
 RUN pip install --no-cache-dir ./runner
-ENV SEALED_HOME=/var/lib/sealed SEALED_SPEC_DIR=/opt/sealed/spec SEALED_POLICY_DIR=/opt/sealed/policies
+ENV SEALED_SPEC_DIR=/opt/sealed/spec SEALED_POLICY_DIR=/opt/sealed/policies
 EXPOSE 8470
 CMD ["sealed", "serve", "--host", "0.0.0.0"]

@@ -33,7 +33,8 @@ echo "Acme GmbH signed with Nordwind AB on 12 March 2026 for EUR 250,000." | .ve
 .venv/bin/sealed serve     # HTTP gateway on 127.0.0.1:8470  (POST /v1/jobs, GET /v1/apps, GET /v1/audit)
 ```
 
-Or as a service: `docker compose up -d` (gateway on 127.0.0.1:8470, needs the Docker socket to launch sandboxes).
+Or as a service: `docker compose up -d` (gateway on 127.0.0.1:8470). It shares `~/.sealed` with the host, so
+`sealed verify` run on the host or via `docker compose exec gateway sealed verify <image>` both feed the same allowlist.
 
 ## What is in the box
 
