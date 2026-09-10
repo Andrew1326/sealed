@@ -20,12 +20,12 @@ Working order. Engineering first, launch material when media is ready. Updated a
 5. [x] **PDF with layout**: pdf2docx app (PyMuPDF) -> translate -> docx2pdf, PDF in, PDF out
 6. [x] **CUDA variants**: registry variants (same signed source, build arg), translate-marian and extract-qwen cuda entries, GPU capability recorded at verify
 7. [ ] **More catalog apps** driven by customer conversations: OCR, PII redaction, speech-to-text, spreadsheets
-8. [ ] **Cloud automation**: control plane creates the runner VM through a provider API (Hetzner first) — enterprise edition, private repo
+8. [~] **Cloud automation**: built in the enterprise repo (Hetzner list/create/delete with cloud-init enrolment), tested against a fake API; needs a real HCLOUD token for a live run
 9. [ ] **Installer test** on a throwaway VM (needs a provider token)
 
 ## Editions
 - [x] Extension hook in the public control plane; community vs enterprise line drawn (see README)
-- [ ] Enterprise package: license keys, orgs and roles, SSO, cloud automation, audit export, alerting integrations
+- [~] Enterprise package (private repo `sealed-enterprise`): license keys and Hetzner cloud automation done; orgs and roles, SSO, audit export, alerting integrations open
 - [ ] Hosted control plane
 
 ## Launch material (needs AI-generated media, later)
