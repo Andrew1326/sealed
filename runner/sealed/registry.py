@@ -40,7 +40,8 @@ def lookup(image_id: str) -> Optional[dict]:
 
 
 def find_by_name(name: str) -> Optional[tuple]:
-    for iid, e in load().items():
-        if e["name"] == name:
-            return iid, e
-    return None
+    """Newest verified image with this app name wins."""
+    hits = [(iid, e) for iid, e in load().items() if e["name"] == name]
+    if not hits:
+        return None
+    return max(hits, key=lambda h: h[1]["verified_at"])

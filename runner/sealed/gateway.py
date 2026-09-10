@@ -3,7 +3,9 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException
+import tempfile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from . import manifest as mf
@@ -11,10 +13,12 @@ from . import registry
 from .gate import audit, check
 from .paths import AUDIT
 from .policy import Policy
-from .sandbox import run_job
+from .sandbox import run_job, wants_gpu
+from .pool import POOL
+from .documents import process_file, whole_text
 
 POLICY_DIR = Path(os.environ.get("SEALED_POLICY_DIR", Path(__file__).resolve().parents[2] / "policies"))
-GPU = os.environ.get("SEALED_GPU", "0") == "1"
+GPU_FLAG = os.environ.get("SEALED_GPU", "0") == "1"
 
 app = FastAPI(title="sealed gateway", version="0.0.1")
 
@@ -52,24 +56,62 @@ def audit_tail(n: int = 50):
     return [__import__("json").loads(l) for l in lines]
 
 
-@app.post("/v1/jobs")
-def submit(job: Job):
-    policy = load_policy(job.policy)
-    if job.op not in policy.allowed_ops:
-        raise HTTPException(403, f"operation '{job.op}' not allowed by policy '{policy.name}'")
-    hit = registry.find_by_name(job.app)
+@app.get("/v1/pool")
+def pool_status():
+    return POOL.status()
+
+
+def _resolve(policy: Policy, app_name: str, op: str):
+    if op not in policy.allowed_ops:
+        raise HTTPException(403, f"operation '{op}' not allowed by policy '{policy.name}'")
+    hit = registry.find_by_name(app_name)
     if hit:
         iid, entry = hit
         image = entry["image"]
-        if job.op not in entry["operations"]:
-            raise HTTPException(400, f"app '{job.app}' does not declare operation '{job.op}'")
+        if op not in entry["operations"]:
+            raise HTTPException(400, f"app '{app_name}' does not declare operation '{op}'")
         if mf.image_id(image) != iid:
             raise HTTPException(409, f"image '{image}' changed since verification; run `sealed verify` again")
-    elif policy.require_verified:
-        raise HTTPException(403, f"app '{job.app}' is not verified and policy '{policy.name}' requires verified apps")
-    else:
-        image, iid = job.app, mf.image_id(job.app) or "unknown"
-    res = run_job(image, job.op, job.input, job.params, memory=policy.memory, gpu=GPU, timeout=policy.timeout_seconds)
+        return image, iid, wants_gpu(entry, GPU_FLAG)
+    if policy.require_verified:
+        raise HTTPException(403, f"app '{app_name}' is not verified and policy '{policy.name}' requires verified apps")
+    return app_name, mf.image_id(app_name) or "unknown", wants_gpu(None, GPU_FLAG)
+
+
+@app.post("/v1/files")
+async def submit_file(file: UploadFile = File(...), app_name: str = Form(..., alias="app"), op: str = Form("translate"),
+                      params: str = Form("{}"), policy_name: str = Form("confidential", alias="policy")):
+    """Upload a txt/md/docx/pdf. translate -> same format back; summarize/extract/classify -> JSON."""
+    policy = load_policy(policy_name)
+    image, iid, gpu = _resolve(policy, app_name, op)
+    prm = __import__("json").loads(params or "{}")
+    tmp = Path(tempfile.mkdtemp(prefix="sealed-"))
+    src = tmp / Path(file.filename or "input.txt").name
+    src.write_bytes(await file.read())
+
+    def call(text):
+        res = run_job(image, op, text, prm, memory=policy.memory, gpu=gpu, timeout=policy.timeout_seconds, warm=policy.warm)
+        verdict = check(policy, op, text, res.output) if res.ok else None
+        audit(policy, image, iid, op, text, res.output if res.ok else None,
+              verdict or type("V", (), {"allowed": False, "reason": res.error})(), res.duration, res.ok)
+        if not res.ok:
+            raise HTTPException(502, {"error": res.error, "stderr_tail": res.stderr[-500:]})
+        if not verdict.allowed:
+            raise HTTPException(403, {"blocked_by_gate": verdict.reason})
+        return res.output
+
+    if op == "translate":
+        dst = tmp / f"{src.stem}.{prm.get('target', 'out')}{src.suffix}"
+        dst = process_file(src, dst, call, policy.chunk_chars)
+        return FileResponse(str(dst), filename=dst.name)
+    return {"ok": True, "app": app_name, "image_id": iid, "op": op, "file": src.name, "output": call(whole_text(src))}
+
+
+@app.post("/v1/jobs")
+def submit(job: Job):
+    policy = load_policy(job.policy)
+    image, iid, gpu = _resolve(policy, job.app, job.op)
+    res = run_job(image, job.op, job.input, job.params, memory=policy.memory, gpu=gpu, timeout=policy.timeout_seconds, warm=policy.warm)
     verdict = check(policy, job.op, job.input, res.output) if res.ok else None
     audit(policy, image, iid, job.op, job.input, res.output if res.ok else None,
           verdict or type("V", (), {"allowed": False, "reason": res.error})(), res.duration, res.ok)

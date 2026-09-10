@@ -6,6 +6,8 @@ allowed_ops: [translate, summarize, extract, classify, ocr, transcribe]
 memory: 8g
 timeout_seconds: 300
 audit: true
+warm: true
+chunk_chars: 6000
 output:
   max_chars: 200000
   # for summarize/extract/classify: block outputs that copy more than this many consecutive input words

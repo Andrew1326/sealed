@@ -1,0 +1,5 @@
+[
+  {"input": "This agreement is confidential and may not be disclosed to third parties.", "params": {"source": "en", "target": "de"},
+   "expect": {"json_keys": ["text"], "contains_any": ["vertraulich", "Dritte"]}},
+  {"input": "", "params": {"source": "en", "target": "de"}, "expect": {"ok": false}}
+]

@@ -1,0 +1,2 @@
+[{"input": "On 12 March 2026, Acme GmbH signed a supply agreement with Nordwind AB for EUR 250,000. Contact: Maria Lindqvist, Stockholm.",
+  "params": {}, "expect": {"json_keys": ["organizations", "people", "dates", "amounts", "locations"], "contains_all": ["Acme", "Nordwind", "Lindqvist"]}}]

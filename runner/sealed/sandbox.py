@@ -5,7 +5,42 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+import glob
+import os
+import shutil
+
 DEFAULT_MEMORY = "8g"
+_DRIVER_LIBS = ["libcuda.so.1", "libnvidia-ml.so.1", "libnvidia-ptxjitcompiler.so.1", "libnvidia-nvvm.so.4"]
+
+
+def has_gpu() -> bool:
+    return os.path.exists("/dev/nvidiactl")
+
+
+def wants_gpu(entry: Optional[dict], flag: bool = False) -> bool:
+    """GPU on when the user asks, or when the verified manifest says optional/required and the host has one."""
+    if flag:
+        return has_gpu()
+    req = ((entry or {}).get("requires") or {}).get("gpu", "none")
+    return req in ("optional", "required") and has_gpu()
+
+
+def gpu_args() -> list:
+    """GPU access. With the NVIDIA container toolkit installed: --gpus all. Without it: pass the device
+    nodes and the driver's user-space libraries read-only. Still no network, still no writable mounts."""
+    if shutil.which("nvidia-container-runtime-hook") or shutil.which("nvidia-ctk") or os.path.exists("/etc/cdi/nvidia.yaml"):
+        return ["--gpus", "all"]
+    args = []
+    for d in ["/dev/nvidia0", "/dev/nvidiactl", "/dev/nvidia-uvm", "/dev/nvidia-uvm-tools"] + sorted(glob.glob("/dev/nvidia[1-9]")):
+        if os.path.exists(d):
+            args += ["--device", d]
+    libdir = "/usr/lib/x86_64-linux-gnu"
+    libs = [os.path.join(libdir, l) for l in _DRIVER_LIBS] + glob.glob(os.path.join(libdir, "libnvidia-gpucomp.so.*"))
+    for l in libs:
+        if os.path.exists(l):
+            args += ["-v", f"{os.path.realpath(l)}:{l}:ro"]
+    return args if "--device" in args else []
+
 DEFAULT_TIMEOUT = 300
 
 
@@ -22,7 +57,7 @@ class RunResult:
 
 def sandbox_args(image: str, memory: str = DEFAULT_MEMORY, cpus: Optional[float] = None,
                  gpu: bool = False, entrypoint: Optional[list] = None, extra_env: Optional[dict] = None,
-                 verify_tools: Optional[str] = None) -> list:
+                 verify_tools: Optional[str] = None, name: Optional[str] = None) -> list:
     """The sandbox contract. Every flag here is mandatory; images cannot opt out."""
     args = [
         "docker", "run", "--rm", "-i",
@@ -39,10 +74,12 @@ def sandbox_args(image: str, memory: str = DEFAULT_MEMORY, cpus: Optional[float]
         "--env", "TRANSFORMERS_OFFLINE=1",
         "--env", "HOME=/tmp",
     ]
+    if name:
+        args += ["--name", name]
     if cpus:
         args += ["--cpus", str(cpus)]
     if gpu:
-        args += ["--gpus", "all"]
+        args += gpu_args()
     for k, v in (extra_env or {}).items():
         args += ["--env", f"{k}={v}"]
     if verify_tools:
@@ -59,8 +96,11 @@ def sandbox_args(image: str, memory: str = DEFAULT_MEMORY, cpus: Optional[float]
 
 def run_job(image: str, op: str, input_value: Any, params: Optional[dict] = None,
             memory: str = DEFAULT_MEMORY, cpus: Optional[float] = None, gpu: bool = False,
-            timeout: int = DEFAULT_TIMEOUT) -> RunResult:
-    job = json.dumps({"op": op, "input": input_value, "params": params or {}})
+            timeout: int = DEFAULT_TIMEOUT, warm: bool = False) -> RunResult:
+    if warm:
+        from .pool import POOL
+        return POOL.submit(image, op, input_value, params, memory, gpu, timeout, cpus)
+    job = json.dumps({"op": op, "input": input_value, "params": params or {}}, ensure_ascii=False) + "\n"
     cmd = sandbox_args(image, memory=memory, cpus=cpus, gpu=gpu)
     t0 = time.time()
     try:

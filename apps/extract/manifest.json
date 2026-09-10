@@ -1,6 +1,6 @@
 {
   "name": "extract-qwen",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Offline structured extraction and summarization with Qwen2.5-1.5B-Instruct (CPU).",
   "vendor": "sealed (community)",
   "license": "Apache-2.0",

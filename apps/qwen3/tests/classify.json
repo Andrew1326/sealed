@@ -1,0 +1,2 @@
+[{"input": "Dear team, please find attached the signed NDA and the invoice for March.", "params": {"labels": ["contract", "invoice", "personal", "marketing"]},
+  "expect": {"json_keys": ["label"], "contains_any": ["contract", "invoice"]}}]

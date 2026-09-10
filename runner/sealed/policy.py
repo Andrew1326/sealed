@@ -22,6 +22,8 @@ class Policy:
     memory: str = "8g"
     timeout_seconds: int = 300
     audit: bool = True
+    warm: bool = True            # keep a loaded container per app between jobs (same sandbox, no network)
+    chunk_chars: int = 6000      # document chunking size for file jobs
 
     @staticmethod
     def load(path: str | Path) -> "Policy":

@@ -12,6 +12,7 @@ from .gate import check
 from .paths import HOME, REPORTS
 from .policy import Policy, OutputRules
 from .sandbox import run_job, run_raw, sandbox_args
+from .pool import Warm
 import re
 
 
@@ -107,7 +108,8 @@ def verify(image: str, gpu: bool = False, skip_scan: bool = False, log=print) ->
     rep.step("sandbox.probe", ok, pr)
     log(f"[4/8] sandbox probe {pr}")
 
-    # 5. conformance: the image's own fixtures, per operation, under the real sandbox
+    # 5. conformance: the image's own fixtures per operation. Fixture 0 runs cold (one job + EOF),
+    #    all fixtures then stream through ONE warm container (JSON-lines protocol, model reuse).
     req = man.get("requires", {})
     mem = req.get("memory", "8g")
     timeout = req.get("timeout_seconds", 300)
@@ -120,15 +122,19 @@ def verify(image: str, gpu: bool = False, skip_scan: bool = False, log=print) ->
             all_ok = False
             continue
         results = []
+        res = run_job(image, op, fixtures[0].get("input", ""), fixtures[0].get("params"), memory=mem, gpu=gpu, timeout=timeout)
+        ok, detail = _expect(fixtures[0], res)
+        results.append({"mode": "cold", "fixture": 0, "ok": ok, "detail": detail, "seconds": round(res.duration, 1)})
+        log(f"[5/8] {op} cold fixture 0: {'ok' if ok else 'FAIL'} ({res.duration:.1f}s) {detail if not ok else ''}")
+        w = Warm(image, mem, gpu)
         for i, fx in enumerate(fixtures):
-            res = run_job(image, op, fx.get("input", ""), fx.get("params"), memory=mem, gpu=gpu, timeout=timeout)
+            res = w.submit(op, fx.get("input", ""), fx.get("params"), timeout)
             ok, detail = _expect(fx, res)
-            results.append({"fixture": i, "ok": ok, "detail": detail, "seconds": round(res.duration, 1)})
-            if not ok:
-                all_ok = False
-                if res.stderr:
-                    results[-1]["stderr"] = res.stderr[-800:]
-            log(f"[5/8] {op} fixture {i}: {'ok' if ok else 'FAIL'} ({res.duration:.1f}s) {detail if not ok else ''}")
+            results.append({"mode": "warm", "fixture": i, "ok": ok, "detail": detail, "seconds": round(res.duration, 1)})
+            if not ok and res.stderr:
+                results[-1]["stderr"] = res.stderr[-800:]
+            log(f"[5/8] {op} warm fixture {i}: {'ok' if ok else 'FAIL'} ({res.duration:.1f}s) {detail if not ok else ''}")
+        w.kill()
         rep.step(f"conformance.{op}", all(r["ok"] for r in results), results)
 
     # 6. intent: trace the first fixture under strace. Attempts to reach the network or escalate

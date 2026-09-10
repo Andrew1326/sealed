@@ -4,7 +4,9 @@ An app image is compliant when it:
 
 1. Ships `/sealed/manifest.json` matching `manifest.schema.json`.
 2. Ships `/sealed/tests/<operation>.json` conformance fixtures for every declared operation.
-3. Has an entrypoint that reads **one** job as JSON on stdin, writes **one** result as JSON on stdout, and exits.
+3. Has an entrypoint that reads jobs as **JSON lines** on stdin, writes one JSON line per job on stdout
+   (flushed), and exits on EOF. A single job followed by EOF is the cold path; the runner's warm pool keeps
+   the process alive and streams many jobs through it, so load models once and keep them.
 4. Runs as a non-root user and needs nothing but its own image contents and `/tmp`.
 
 The runner always executes the image with:
@@ -14,14 +16,14 @@ The runner always executes the image with:
 
 regardless of what the image asks for. There is no way to opt out.
 
-## Job (stdin)
+## Job (one line on stdin)
 
     {"op": "translate", "input": "text...", "params": {"source": "en", "target": "de"}}
 
 `input` is a string for `text/plain` apps, a JSON value for `application/json` apps,
 and base64 for `application/octet-stream` apps.
 
-## Result (stdout)
+## Result (one line on stdout)
 
     {"ok": true, "output": "übersetzter Text"}
     {"ok": false, "error": "unsupported language pair"}
