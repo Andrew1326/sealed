@@ -30,5 +30,6 @@ test: evil        ## prove the sandbox with the evil image, then run text, docum
 	bash tests/test_control.sh
 	bash tests/test_auth.sh
 	bash tests/test_control_ui.sh
+	bash tests/test_tls.sh
 serve:
 	.venv/bin/sealed serve

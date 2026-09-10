@@ -15,7 +15,7 @@ Working order. Engineering first, launch material when media is ready. Updated a
 ## Engineering, in order
 1. [x] **Gateway authentication**: per-client API keys, client label in audit, refuse to bind non-localhost without keys
 2. [x] **Control panel UI**: console design system (light/dark), login, runners with detail and per-runner overrides, policy editor with validation, trusted keys, enrol tokens, audit browser with filters, webhook alerts, settings
-3. [ ] **TLS**: built-in cert support for control plane and gateway, documented reverse-proxy alternative
+3. [x] **TLS**: self-signed certs built in, runners pin the control plane fingerprint, both services refuse public binds without TLS, Caddy alternative documented
 4. [ ] **Pseudonymization pass** for the `standard` tier (names, numbers, identifiers swapped locally and restored)
 5. [ ] **PDF with layout**: pdf -> docx via LibreOffice, translate, -> pdf
 6. [ ] **CUDA variants** of translate-marian and extract-qwen in the registry

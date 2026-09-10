@@ -194,6 +194,18 @@ def notify(url: str, runner_id: str, label: str, events: list) -> None:
 
 
 PUBLIC_URL = os.environ.get("SEALED_CONTROL_PUBLIC_URL", "http://<control-host>:8480")
+TLS_CERT = os.environ.get("SEALED_CONTROL_CERT", "")
+TLS_KEY = os.environ.get("SEALED_CONTROL_KEY", "")
+FINGERPRINT = ""
+if TLS_CERT:
+    from .certs import fingerprint as _fp
+    FINGERPRINT = _fp(Path(TLS_CERT).read_bytes())
+
+
+@app.get("/v1/fingerprint")
+def fp():
+    """Public: the certificate fingerprint, so an operator can compare what a runner sees."""
+    return {"tls": bool(TLS_CERT), "fingerprint": FINGERPRINT}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -230,10 +242,28 @@ app.include_router(_ui.r)
 
 
 def main():
-    import click
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "cert":
+        import click
+        from . import certs
+
+        @click.command()
+        @click.option("--host", "hosts", multiple=True, required=True, help="hostname or IP of the control plane (repeatable)")
+        @click.option("--out", default="./tls")
+        def _cert(hosts, out):
+            c, k, fpr = certs.write(Path(out), list(hosts), "control")
+            click.echo(f"cert {c}\nkey  {k}\nfingerprint {fpr}\n"
+                       f"start with: SEALED_CONTROL_CERT={c} SEALED_CONTROL_KEY={k} sealed-control\n"
+                       f"runners enrol with: --fingerprint {fpr}")
+        _cert(sys.argv[2:])
+        return
     host, port = os.environ.get("SEALED_CONTROL_HOST", "127.0.0.1"), int(os.environ.get("SEALED_CONTROL_PORT", "8480"))
-    print(f"sealed control on http://{host}:{port}   admin token: {ADMIN}   db: {DB}")
-    uvicorn.run("sealed_control.app:app", host=host, port=port)
+    if host not in ("127.0.0.1", "localhost", "::1") and not TLS_CERT and os.environ.get("SEALED_ALLOW_NO_TLS") != "1":
+        print(f"refusing to bind {host} without TLS. Run `sealed-control cert --host <name>` or set SEALED_ALLOW_NO_TLS=1 behind a TLS reverse proxy.")
+        sys.exit(2)
+    scheme = "https" if TLS_CERT else "http"
+    print(f"sealed control on {scheme}://{host}:{port}   admin token: {ADMIN}   db: {DB}" + (f"\ncertificate fingerprint: {FINGERPRINT}" if TLS_CERT else ""))
+    uvicorn.run("sealed_control.app:app", host=host, port=port, ssl_certfile=TLS_CERT or None, ssl_keyfile=TLS_KEY or None)
 
 
 if __name__ == "__main__":

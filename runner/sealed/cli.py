@@ -146,15 +146,24 @@ def contract(image):
 @main.command()
 @click.option("--host", default="127.0.0.1")
 @click.option("--port", default=8470)
-def serve(host, port):
+@click.option("--cert", default=os.environ.get("SEALED_TLS_CERT", ""), help="TLS certificate (PEM). Empty = plain http.")
+@click.option("--key", default=os.environ.get("SEALED_TLS_KEY", ""), help="TLS private key (PEM)")
+def serve(host, port, cert, key):
     """Start the local gateway."""
     import uvicorn
     from . import auth
     if not auth.load() and host not in ("127.0.0.1", "localhost", "::1") and os.environ.get("SEALED_ALLOW_NO_KEYS") != "1":
         click.echo(f"refusing to bind {host} without API keys. Create one: sealed keys create --label myapp", err=True)
         sys.exit(2)
-    click.echo(f"sealed home: {HOME}  allowlist: {ALLOWLIST}  auth: {'api-key' if auth.load() else 'none (localhost dev mode)'}")
-    uvicorn.run("sealed.gateway:app", host=host, port=port)
+    if host not in ("127.0.0.1", "localhost", "::1") and not cert and os.environ.get("SEALED_ALLOW_NO_TLS") != "1":
+        click.echo(f"refusing to bind {host} without TLS. Run `sealed cert --host <name>` or set SEALED_ALLOW_NO_TLS=1 behind a TLS reverse proxy.", err=True)
+        sys.exit(2)
+    tls = f"tls {cert}" if cert else "plain http"
+    if cert:
+        from .certs import fingerprint
+        click.echo(f"certificate fingerprint: {fingerprint(Path(cert).read_bytes())}")
+    click.echo(f"sealed home: {HOME}  allowlist: {ALLOWLIST}  auth: {'api-key' if auth.load() else 'none (localhost dev mode)'}  {tls}")
+    uvicorn.run("sealed.gateway:app", host=host, port=port, ssl_certfile=cert or None, ssl_keyfile=key or None)
 
 
 @main.command()
@@ -303,14 +312,24 @@ def launcher(host, port):
 @main.command()
 @click.argument("control")
 @click.argument("token")
-def enroll(control, token):
-    """Enrol this runner with a control plane: sealed enroll https://control.example.com enr_xxx"""
+@click.option("--fingerprint", default=os.environ.get("SEALED_CONTROL_FINGERPRINT", ""),
+              help="pin the control plane's certificate (sha256:...); required for self-signed TLS")
+def enroll(control, token, fingerprint):
+    """Enrol this runner with a control plane: sealed enroll https://control.example.com enr_xxx --fingerprint sha256:..."""
     from . import agent
     import urllib.error
+    if control.startswith("http://") and "127.0.0.1" not in control and "localhost" not in control:
+        click.echo("warning: plain http to a remote control plane. Use https and --fingerprint.", err=True)
     try:
-        st = agent.enroll(control, token)
+        st = agent.enroll(control, token, fingerprint)
     except urllib.error.HTTPError as e:
         click.echo(f"enrolment refused: HTTP {e.code} {e.read().decode(errors='replace')[:200]}", err=True)
+        sys.exit(3)
+    except Exception as e:
+        msg = str(e)
+        hint = ("\nself-signed certificate? pin it: --fingerprint sha256:... (shown on the control plane's enrol-token page)"
+                if "certificate" in msg.lower() or "ssl" in msg.lower() else "")
+        click.echo(f"enrolment failed: {msg[:300]}{hint}", err=True)
         sys.exit(3)
     click.echo(f"enrolled as {st['runner_id']} with {st['control']} (state in {agent.STATE})")
 
@@ -353,3 +372,13 @@ def keys_list():
 def keys_revoke(label):
     from . import auth
     click.echo(f"revoked {auth.revoke(label)} key(s) labelled {label}")
+
+
+@main.command()
+@click.option("--host", "hosts", multiple=True, required=True, help="hostname or IP the gateway is reached at (repeatable)")
+@click.option("--out", default=str(HOME / "tls"))
+def cert(hosts, out):
+    """Generate a self-signed TLS certificate for the gateway."""
+    from . import certs
+    c, k, fp = certs.write(Path(out), list(hosts), "gateway")
+    click.echo(f"cert {c}\nkey  {k}\nfingerprint {fp}\nstart with: sealed serve --host 0.0.0.0 --cert {c} --key {k}")

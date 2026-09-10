@@ -18,15 +18,17 @@ STATE = HOME / "agent.json"
 POLICY_DIR = HOME / "policies"
 
 
-def _post(url, body, key=None):
+def _post(url, body, key=None, pin=""):
+    from .pinned import opener
     req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"content-type": "application/json", **({"authorization": f"Bearer {key}"} if key else {})})
-    with urllib.request.urlopen(req, timeout=30) as r:
+    with opener(pin).open(req, timeout=30) as r:
         return json.loads(r.read())
 
 
-def enroll(control: str, token: str) -> dict:
-    d = _post(control.rstrip("/") + "/v1/enroll", {"token": token, "hostname": platform.node(), "version": __version__})
-    st = {"control": control.rstrip("/"), "runner_id": d["runner_id"], "runner_key": d["runner_key"], "audit_offset": 0}
+def enroll(control: str, token: str, fingerprint: str = "") -> dict:
+    d = _post(control.rstrip("/") + "/v1/enroll", {"token": token, "hostname": platform.node(), "version": __version__}, pin=fingerprint)
+    st = {"control": control.rstrip("/"), "runner_id": d["runner_id"], "runner_key": d["runner_key"], "audit_offset": 0,
+          "ca_fingerprint": fingerprint}
     STATE.write_text(json.dumps(st, indent=2))
     STATE.chmod(0o600)
     return st
@@ -78,7 +80,7 @@ def heartbeat_once(st: dict) -> dict:
         pass
     body = {"hostname": platform.node(), "version": __version__, "gpu": has_gpu(), "apps": apps, "pool": pool,
             "runtime": os.environ.get("SEALED_RUNTIME", ""), "audit": audit}
-    d = _post(f"{st['control']}/v1/runners/{st['runner_id']}/heartbeat", body, st["runner_key"])
+    d = _post(f"{st['control']}/v1/runners/{st['runner_id']}/heartbeat", body, st["runner_key"], st.get("ca_fingerprint", ""))
     st["audit_offset"] = st.get("audit_offset", 0) + len(audit)
     STATE.write_text(json.dumps(st, indent=2))
     return {"sent_audit": len(audit), "changed": apply_config(d.get("config") or {})}

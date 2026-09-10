@@ -142,6 +142,32 @@ four-level health language (online / late / offline, allow / blocked, ok / error
 Policies and trusted keys pushed from the control plane are applied by the agent on the next heartbeat and take
 precedence over the repo's `policies/`.
 
+## TLS
+
+Both services refuse to bind a non-localhost address without a certificate. Two ways to get one:
+
+```bash
+# built-in, self-signed. Runners pin the fingerprint, so no CA has to be distributed.
+sealed-control cert --host control.example.com --host 203.0.113.10
+SEALED_CONTROL_CERT=tls/control.crt SEALED_CONTROL_KEY=tls/control.key SEALED_CONTROL_HOST=0.0.0.0 sealed-control
+#   runners: SEALED_CONTROL_FINGERPRINT=sha256:... in the install one-liner (the enrol-token page fills it in)
+
+sealed cert --host gateway.internal            # same for the gateway
+sealed serve --host 0.0.0.0 --cert ~/.sealed/tls/gateway.crt --key ~/.sealed/tls/gateway.key
+```
+
+Or terminate TLS in a reverse proxy with a real certificate and set `SEALED_ALLOW_NO_TLS=1` on the service
+behind it. A complete Caddyfile:
+
+```
+control.example.com {
+    reverse_proxy 127.0.0.1:8480
+}
+```
+
+A pinned runner accepts only the exact certificate it enrolled with. Rotate the certificate and runners must be
+re-enrolled, which is the intended trade: no silent substitution.
+
 ## Measured on this machine (RTX 5080, 32 cores)
 
 | Job | Cold | Warm |

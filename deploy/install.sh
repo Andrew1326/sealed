@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # One-line runner install for a fresh Ubuntu/Debian machine or VM (your laptop, office server, or a VM in your cloud account).
 #   curl -fsSL https://raw.githubusercontent.com/Andrew1326/sealed/master/deploy/install.sh | bash
-# Optional: SEALED_CONTROL=https://control.example.com SEALED_ENROLL_TOKEN=enr_xxx  to enrol with a control plane.
+# Optional: SEALED_CONTROL=https://control.example.com SEALED_ENROLL_TOKEN=enr_xxx  to enrol with a control plane,
+#           SEALED_CONTROL_FINGERPRINT=sha256:...  to pin its (self-signed) certificate.
 #           SEALED_APPS="translate-marian docx2pdf"  apps to install from the registry (default: those two).
 set -euo pipefail
 REPO=${SEALED_REPO:-https://github.com/Andrew1326/sealed.git}
@@ -33,7 +34,7 @@ for a in $APPS; do
 done
 if [ -n "${SEALED_CONTROL:-}" ] && [ -n "${SEALED_ENROLL_TOKEN:-}" ]; then
   echo "== enrol with control plane"
-  $S enroll "$SEALED_CONTROL" "$SEALED_ENROLL_TOKEN"
+  $S enroll "$SEALED_CONTROL" "$SEALED_ENROLL_TOKEN" ${SEALED_CONTROL_FINGERPRINT:+--fingerprint "$SEALED_CONTROL_FINGERPRINT"}
 fi
 echo "== gateway API key (shown once, keep it)"
 $S keys create --label default | head -1

@@ -552,7 +552,8 @@ def tokens(request: Request, new: str = "", flash: str = ""):
     base = core.get_config_raw().get("public_url") or core.PUBLIC_URL
     reveal = ""
     if new:
-        one_liner = (f'SEALED_CONTROL={base} SEALED_ENROLL_TOKEN={new} \\\n'
+        pin = f' \\\n  SEALED_CONTROL_FINGERPRINT={core.FINGERPRINT}' if core.FINGERPRINT else ""
+        one_liner = (f'SEALED_CONTROL={base} SEALED_ENROLL_TOKEN={new}{pin} \\\n'
                      '  bash -c "$(curl -fsSL https://raw.githubusercontent.com/Andrew1326/sealed/master/deploy/install.sh)"')
         reveal = card("New token — shown once",
                       f'<p style="margin:0 0 .5rem"><code style="font-size:13px">{esc(new)}</code></p>'
@@ -734,13 +735,20 @@ def settings(request: Request, flash: str = ""):
                '<code>/v1/runners/&lt;id&gt;/heartbeat</code>.</p>'
                '<p class=note style="margin-top:.5rem">The admin token is set with <code>SEALED_CONTROL_ADMIN_TOKEN</code> '
                'and printed at startup when unset.</p>')
+    tls = card("Transport",
+               (f'<p class=note><span class="pill good">TLS on</span> Certificate fingerprint <code>{esc(core.FINGERPRINT)}</code>. '
+                'Runners enrolled with this fingerprint accept only this certificate, so a self-signed cert is safe to use.</p>')
+               if core.FINGERPRINT else
+               '<p class=note><span class="pill action">plain http</span> Fine on localhost or behind a TLS reverse proxy. '
+               'For direct exposure run <code>sealed-control cert --host &lt;name&gt;</code> and start with '
+               '<code>SEALED_CONTROL_CERT</code> / <code>SEALED_CONTROL_KEY</code>.</p>')
     boundary = card("Data boundary",
                     '<p class=note>This service stores runner registrations, the policies and trusted keys you publish, '
                     'and job metadata: timestamps, operations, image IDs, input hashes and sizes, gate verdicts. It has '
                     'no route to document content, and runners have no code path that would send it.</p>')
     pb = '<div class=pagebar><h1>Settings</h1></div>'
     body = (f'<div class="split"><div class=pane><div class="pane-in rail">{fleet}</div></div>'
-            f'<div class=pane><div class="pane-in rail">{api}{boundary}</div></div></div>')
+            f'<div class=pane><div class="pane-in rail">{tls}{api}{boundary}</div></div></div>')
     return page("Settings", f'<div class="page pinned">{pb}{body}</div>', "settings", [("Settings", None)], flash)
 
 

@@ -4,10 +4,14 @@ services:
   control:
     build: {context: .., dockerfile: control/Dockerfile}
     image: sealed/control:0.0.1
-    ports: ["8480:8480"]                           # put a TLS reverse proxy in front for anything beyond a LAN
-    volumes: [control-data:/data]
+    ports: ["8480:8480"]
+    volumes:
+      - control-data:/data
+      - ./tls:/tls:ro                              # from `sealed-control cert --host <name> --out deploy/tls`
     environment:
       SEALED_CONTROL_ADMIN_TOKEN: ${SEALED_CONTROL_ADMIN_TOKEN:?set an admin token}
+      SEALED_CONTROL_CERT: /tls/control.crt        # or drop these two and set SEALED_ALLOW_NO_TLS=1 behind a TLS proxy
+      SEALED_CONTROL_KEY: /tls/control.key
     restart: unless-stopped
 volumes:
   control-data:
