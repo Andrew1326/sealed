@@ -18,5 +18,6 @@ verify-gpu: apps-gpu
 test: evil        ## prove the sandbox with the evil image, then run text, document and gateway jobs
 	bash tests/test_egress.sh
 	bash tests/test_e2e.sh
+	bash tests/test_registry.sh
 serve:
 	.venv/bin/sealed serve

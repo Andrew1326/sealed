@@ -1,0 +1,57 @@
+{
+  "updated": "2026-09-10T08:23:16Z",
+  "apps": [
+    {
+      "name": "extract-qwen",
+      "version": "0.2.0",
+      "description": "Offline structured extraction and summarization with Qwen2.5-1.5B-Instruct (CPU).",
+      "operations": [
+        "extract",
+        "summarize"
+      ],
+      "requires": {
+        "gpu": "none",
+        "memory": "8g",
+        "timeout_seconds": 600
+      },
+      "image": "sealed/extract-qwen:0.2.0",
+      "image_id": "sha256:8fa3d578297f684ef1970120d62ba7806bc03848009527d027839dd649f27a72",
+      "entry": "extract-qwen-0.2.0.json"
+    },
+    {
+      "name": "qwen3-4b",
+      "version": "0.1.0",
+      "description": "Quality tier: Qwen3-4B-Instruct for translation (any language pair), summarization, extraction and classification. GPU recommended, runs on CPU.",
+      "operations": [
+        "translate",
+        "summarize",
+        "extract",
+        "classify"
+      ],
+      "requires": {
+        "gpu": "optional",
+        "memory": "16g",
+        "timeout_seconds": 1800
+      },
+      "image": "sealed/qwen3-4b:0.1.0-cuda",
+      "image_id": "sha256:a8618f84e6b8f5e20b945574fb3710b5ca6f82805330216002f819bc33c077b3",
+      "entry": "qwen3-4b-0.1.0.json"
+    },
+    {
+      "name": "translate-marian",
+      "version": "0.2.0",
+      "description": "Offline neural translation (Helsinki-NLP OPUS-MT). Pairs: en-de, de-en, en-ru, ru-en, en-fr, fr-en.",
+      "operations": [
+        "translate"
+      ],
+      "requires": {
+        "gpu": "none",
+        "memory": "4g",
+        "timeout_seconds": 300
+      },
+      "image": "sealed/translate-marian:0.2.0",
+      "image_id": "sha256:a81c3b2c02ef45c63c1c59d6d8a44f2e07bac0ee4146cd783ee4405602f3a87b",
+      "entry": "translate-marian-0.2.0.json"
+    }
+  ]
+}

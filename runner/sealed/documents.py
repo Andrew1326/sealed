@@ -8,8 +8,9 @@ app sees paragraph boundaries. If an app returns a different number of lines tha
 chunk is retried unit by unit.
 """
 import json
+import re
 from pathlib import Path
-from typing import Callable, List
+from typing import Callable, List, Optional
 
 TEXT_EXT = {".txt", ".md", ".csv"}
 
@@ -62,16 +63,39 @@ def _text_of(output) -> str:
     return json.dumps(output, ensure_ascii=False)
 
 
+MARK = "\u27e6{}\u27e7"   # ⟦n⟧ : survives LLM translators, is stripped before output
+_MARK_RE = re.compile(r"\u27e6\s*(\d+)\s*\u27e7\s*")
+
+
+def _align_by_markers(buf: List[str], run) -> Optional[List[str]]:
+    """Send the chunk with ⟦n⟧ markers and rebuild by marker, tolerant to merged or split lines."""
+    joined = "\n".join(MARK.format(i + 1) + " " + u.replace("\n", " ") for i, u in enumerate(buf))
+    text = _text_of(run(joined))
+    parts = _MARK_RE.split(text)
+    # parts = [pre, n1, text1, n2, text2, ...]
+    found = {}
+    for n, t in zip(parts[1::2], parts[2::2]):
+        found[int(n)] = (found.get(int(n), "") + " " + t.strip()).strip()
+    if len(found) != len(buf) or set(found) != set(range(1, len(buf) + 1)):
+        return None
+    return [found[i + 1] for i in range(len(buf))]
+
+
 def transform_units(units: List[str], run: Callable[[str], object], chunk_chars: int, log=None) -> List[str]:
-    """run(text) -> output. Returns a list the same length as units with transformed text."""
+    """run(text) -> output. Returns a list the same length as units with transformed text.
+    Order of attempts per chunk: plain lines -> ⟦n⟧ markers -> one job per unit."""
     out = list(units)
     for idx, buf in _chunks(units, chunk_chars):
         joined = "\n".join(u.replace("\n", " ") for u in buf)
         res = _text_of(run(joined)).split("\n")
         if len(res) != len(buf):
-            if log:
-                log(f"chunk of {len(buf)} units came back as {len(res)} lines, retrying unit by unit")
-            res = [_text_of(run(u)) for u in buf]
+            res = _align_by_markers(buf, run)
+            if res is None:
+                if log:
+                    log(f"chunk of {len(buf)} units could not be aligned, retrying unit by unit")
+                res = [_text_of(run(u)) for u in buf]
+            elif log:
+                log(f"chunk of {len(buf)} units aligned by markers")
         for i, r in zip(idx, res):
             out[i] = r
     return out

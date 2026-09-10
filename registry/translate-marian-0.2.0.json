@@ -1,0 +1,45 @@
+{
+  "name": "translate-marian",
+  "version": "0.2.0",
+  "description": "Offline neural translation (Helsinki-NLP OPUS-MT). Pairs: en-de, de-en, en-ru, ru-en, en-fr, fr-en.",
+  "operations": [
+    "translate"
+  ],
+  "requires": {
+    "gpu": "none",
+    "memory": "4g",
+    "timeout_seconds": 300
+  },
+  "models": [
+    {
+      "id": "Helsinki-NLP/opus-mt-en-de",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "Helsinki-NLP/opus-mt-de-en",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "Helsinki-NLP/opus-mt-en-ru",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "Helsinki-NLP/opus-mt-ru-en",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "Helsinki-NLP/opus-mt-en-fr",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "Helsinki-NLP/opus-mt-fr-en",
+      "license": "CC-BY-4.0"
+    }
+  ],
+  "image": "sealed/translate-marian:0.2.0",
+  "image_id": "sha256:a81c3b2c02ef45c63c1c59d6d8a44f2e07bac0ee4146cd783ee4405602f3a87b",
+  "report_sha256": "4d224b8284af961d84d37175f920b3f354d3e765712e773f9fc3e1c73ab24986",
+  "signed_at": "2026-09-10T08:23:16Z",
+  "publisher_key": "lCQf6IWKfq+5u50EoD+yGgyTFuuD7Vzw5CewbfIYlts=",
+  "signature": "kGHKGF0XKjwGVib5lUdB0C1aYhOgsw2ZKqRuMAkHvsaZrlDejdlzoi4Wjg9tDjbacfmHkj2ncx/RIcAWDkkkAQ=="
+}

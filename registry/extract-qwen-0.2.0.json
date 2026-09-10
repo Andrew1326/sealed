@@ -1,0 +1,26 @@
+{
+  "name": "extract-qwen",
+  "version": "0.2.0",
+  "description": "Offline structured extraction and summarization with Qwen2.5-1.5B-Instruct (CPU).",
+  "operations": [
+    "extract",
+    "summarize"
+  ],
+  "requires": {
+    "gpu": "none",
+    "memory": "8g",
+    "timeout_seconds": 600
+  },
+  "models": [
+    {
+      "id": "Qwen/Qwen2.5-1.5B-Instruct",
+      "license": "Apache-2.0"
+    }
+  ],
+  "image": "sealed/extract-qwen:0.2.0",
+  "image_id": "sha256:8fa3d578297f684ef1970120d62ba7806bc03848009527d027839dd649f27a72",
+  "report_sha256": "a69053f6bb68d45ae65d993167420cc6213b14e5f13a979174f1535992a04afb",
+  "signed_at": "2026-09-10T08:23:16Z",
+  "publisher_key": "lCQf6IWKfq+5u50EoD+yGgyTFuuD7Vzw5CewbfIYlts=",
+  "signature": "u63WzCZ7jJJV6EHoAOjk1b+MifjxQXFbXms77Q9mcJJNjEuFEHzchFkUu+lbEzGsO9iFhn6voaUzcJ8nA8G2BQ=="
+}

@@ -72,6 +72,26 @@ Or as a service: `docker compose up -d` (gateway on 127.0.0.1:8470). It shares `
 `apps/evil` is a "translator" that tries HTTP, DNS, raw sockets, rootfs writes, the docker socket,
 setuid and mount. `make test` shows all attempts blocked and the image rejected at step 6.
 
+## Registry: publish and install
+
+Publishers sign the result of `verify`; users install only entries signed by keys they trust, and the pulled
+image must have the exact content-addressed ID that was signed. Tampering with an entry, or swapping the image,
+is refused before anything runs.
+
+```bash
+# publisher
+sealed keygen                                   # Ed25519 key in ~/.sealed/keys, trusted locally
+sealed verify sealed/translate-marian:0.2.0
+sealed sign   sealed/translate-marian:0.2.0 --ref ghcr.io/you/translate-marian:0.2.0   # writes registry/<name>-<version>.json + index.json
+# user
+sealed trust <publisher public key> "sealed community"
+sealed catalog --registry https://raw.githubusercontent.com/<org>/sealed/main/registry
+sealed install translate-marian --registry <same url>        # pulls, checks ID, re-runs verify locally
+sealed install translate-marian --no-verify                  # or accept the publisher's signed verification
+```
+
+The `registry/` directory in this repo is the first registry. Set `SEALED_REGISTRY` to point the runner elsewhere.
+
 ## Measured on this machine (RTX 5080, 32 cores)
 
 | Job | Cold | Warm |
@@ -112,9 +132,8 @@ and writes one JSON result to stdout. `apps/translate` is 60 lines.
 
 ## Roadmap
 
-- Marker-based line alignment for LLM translators (today a chunk whose line count changes is retried unit by unit, which is correct but slower).
 - PDF output that keeps layout (currently pdf translates to txt).
 - Pseudonymization pass in the gateway for the `standard` tier.
-- Signed manifests and a public registry of verified digests.
+- Push community images to ghcr.io so `install` works without a local build.
 - gVisor/Kata runtime option and Docker socket proxy.
 - Management plane for deploying runners into customer cloud accounts.

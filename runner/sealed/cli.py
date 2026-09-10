@@ -12,6 +12,9 @@ from .policy import Policy
 from .sandbox import run_job, sandbox_args, wants_gpu
 from .documents import process_file, whole_text
 from .verify import verify as _verify
+from . import signing
+import os
+import subprocess
 
 
 @click.group()
@@ -156,3 +159,96 @@ def prune():
         if mf.image_id(e["image"]) != iid:
             registry.remove(iid)
             click.echo(f"pruned {e['name']} {e['version']} ({iid[:19]}…)")
+
+
+DEFAULT_REGISTRY = os.environ.get("SEALED_REGISTRY", str(Path(__file__).resolve().parents[2] / "registry"))
+
+
+@main.command()
+@click.option("--name", default="publisher")
+def keygen(name):
+    """Create an Ed25519 publisher key in ~/.sealed/keys and trust it locally."""
+    path, pub = signing.keygen(name)
+    signing.trust(pub, f"local:{name}")
+    click.echo(f"private key {path}\npublic key  {pub}\n(trusted locally; share the public key with users, they run: sealed trust <key> <label>)")
+
+
+@main.command()
+@click.argument("pubkey")
+@click.argument("label")
+def trust(pubkey, label):
+    """Trust a publisher's public key."""
+    signing.trust(pubkey, label)
+    click.echo(f"trusted {label}")
+
+
+@main.command()
+@click.argument("image")
+@click.option("--ref", default=None, help="image reference users will pull (default: the local tag)")
+@click.option("--registry", "registry_dir", default=DEFAULT_REGISTRY, help="registry directory to write into")
+@click.option("--key", default="publisher")
+def sign(image, ref, registry_dir, key):
+    """Sign a VERIFIED image and write its registry entry + index."""
+    iid = mf.image_id(image)
+    entry = registry.lookup(iid) if iid else None
+    if not entry:
+        click.echo(f"{image} is not in the allowlist. Run `sealed verify {image}` first.", err=True)
+        sys.exit(2)
+    man = mf.read_manifest(image)
+    e = signing.sign_entry(signing.make_entry(ref or image, iid, man, entry["report"]), key)
+    path = signing.write_registry_entry(Path(registry_dir), e)
+    click.echo(f"signed {man['name']} {man['version']} -> {path}")
+
+
+@main.command()
+@click.option("--registry", "base", default=DEFAULT_REGISTRY, help="registry URL or directory")
+def catalog(base):
+    """List apps available in the registry."""
+    idx = signing.fetch_index(base)
+    for a in idx["apps"]:
+        gpu = a["requires"].get("gpu", "none")
+        click.echo(f"{a['name']:20} {a['version']:12} {','.join(a['operations']):40} gpu={gpu:8} mem={a['requires'].get('memory','?')}  {a['description'][:60]}")
+
+
+@main.command()
+@click.argument("name")
+@click.option("--registry", "base", default=DEFAULT_REGISTRY, help="registry URL or directory")
+@click.option("--version", "version", default=None)
+@click.option("--no-verify", is_flag=True, help="trust the publisher's signed verification instead of re-running verify locally")
+@click.option("--gpu", is_flag=True)
+def install(name, base, version, no_verify, gpu):
+    """Fetch a signed registry entry, check the signature, pull the image, check its ID, verify, allow."""
+    idx = signing.fetch_index(base)
+    cands = [a for a in idx["apps"] if a["name"] == name and (version is None or a["version"] == version)]
+    if not cands:
+        click.echo(f"no app '{name}' in registry {base}", err=True)
+        sys.exit(2)
+    a = max(cands, key=lambda x: x["version"])
+    e = signing.fetch_entry(base, a["entry"])
+    who, why = signing.verify_entry(e)
+    if why == "bad-signature":
+        click.echo(f"REFUSED: entry for {name} {e['version']} has an INVALID signature. The entry was modified after signing.", err=True)
+        sys.exit(3)
+    if why:
+        click.echo(f"REFUSED: entry for {name} {e['version']} is not signed by a trusted key (publisher key {e.get('publisher_key','?')[:16]}…).\n"
+                   f"If you trust this publisher: sealed trust {e.get('publisher_key')} <label>", err=True)
+        sys.exit(3)
+    click.echo(f"signature ok: {name} {e['version']} signed by {who}")
+    if mf.image_id(e["image"]) != e["image_id"]:
+        click.echo(f"pulling {e['image']} …")
+        r = subprocess.run(["docker", "pull", e["image"]], capture_output=True, text=True)
+        if r.returncode != 0:
+            click.echo(r.stderr.strip()[-500:], err=True)
+            sys.exit(4)
+    got = mf.image_id(e["image"])
+    if got != e["image_id"]:
+        click.echo(f"REFUSED: pulled image ID {got} does not match signed ID {e['image_id']}", err=True)
+        sys.exit(5)
+    click.echo(f"image ID matches signed entry ({got[:19]}…)")
+    if no_verify:
+        registry.add(got, e["image"], {"name": e["name"], "version": e["version"], "operations": e["operations"], "requires": e["requires"]},
+                     f"signed-by:{who}")
+        click.echo(f"installed {name} {e['version']} on the publisher's signed verification")
+        return
+    rep = _verify(e["image"], gpu=gpu, skip_scan=True)
+    sys.exit(0 if rep.passed else 1)
