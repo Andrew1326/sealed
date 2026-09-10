@@ -103,6 +103,27 @@ Model weights are pinned to Hugging Face commit revisions in each manifest and f
 building the same package get the same weights. Costs nothing to host: the registry is a directory of small files
 served from anywhere (this repo, a static bucket, a file share).
 
+## Fleet: control plane, agent, one-line install
+
+For more than one machine, or for deploying into a customer's cloud account, run the control plane and enrol runners.
+The control plane holds policies, trusted publisher keys, the registry URL, and audit **metadata** (hashes, sizes,
+image IDs, gate verdicts). It has no path to document content: the runner's agent is the only outbound component
+and the audit format contains none.
+
+```bash
+# control plane (anywhere your runners can reach; metadata only, so a small VM is fine)
+SEALED_CONTROL_ADMIN_TOKEN=$(openssl rand -base64 24) docker compose -f deploy/control-compose.yml up -d --build
+curl -X POST http://control:8480/v1/admin/enroll-tokens -H "authorization: Bearer $SEALED_CONTROL_ADMIN_TOKEN" -d '{"label":"office-server"}'
+
+# runner: fresh Ubuntu machine or VM (or paste deploy/cloud-init.yaml as VM user-data)
+SEALED_CONTROL=http://control:8480 SEALED_ENROLL_TOKEN=enr_xxx bash -c "$(curl -fsSL https://raw.githubusercontent.com/Andrew1326/sealed/master/deploy/install.sh)"
+```
+
+The installer puts Docker in place, trusts the community publisher key, builds and verifies the requested apps
+locally, enrols, and starts gateway + launcher + agent. Dashboard at `http://control:8480/?token=<admin token>`:
+runners online, verified apps per runner, jobs, blocked outputs. Policies and trusted keys pushed from the control
+plane are applied by the agent on the next heartbeat and take precedence over the repo's `policies/`.
+
 ## Measured on this machine (RTX 5080, 32 cores)
 
 | Job | Cold | Warm |
@@ -155,4 +176,4 @@ OCR, virus scanning, PII redaction, signature checks, report generation. Same co
 
 - PDF output that keeps layout (currently pdf translates to txt).
 - Pseudonymization pass in the gateway for the `standard` tier.
-- Management plane for deploying runners into customer cloud accounts.
+- Control plane: web UI for editing policies, per-runner policy, alerting on blocked outputs, TLS by default.

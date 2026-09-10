@@ -1,0 +1,9 @@
+#cloud-config
+# Paste as "user data" when creating a VM in AWS, GCP, Azure, Hetzner, DigitalOcean... Ubuntu 22.04/24.04.
+# Replace the two SEALED_* values with an enrolment token from your control plane (or delete them for a standalone runner).
+package_update: true
+packages: [git, python3-venv, curl]
+runcmd:
+  - curl -fsSL https://get.docker.com | sh
+  - usermod -aG docker ubuntu
+  - su - ubuntu -c "SEALED_CONTROL=https://control.example.com SEALED_ENROLL_TOKEN=enr_replace_me bash -c 'curl -fsSL https://raw.githubusercontent.com/Andrew1326/sealed/master/deploy/install.sh | bash'"

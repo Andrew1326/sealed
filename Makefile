@@ -1,6 +1,6 @@
 .PHONY: setup tools apps apps-gpu evil verify verify-gpu sign test serve
 setup:            ## local dev install of the runner
-	python3 -m venv .venv && .venv/bin/pip install -q -e ./runner
+	python3 -m venv .venv && .venv/bin/pip install -q -e ./runner -e ./control
 tools:            ## static strace for intent detection in verify (extracted from alpine)
 	.venv/bin/sealed tools
 apps:             ## CPU community apps (downloads ~3 GB of weights once)
@@ -27,5 +27,6 @@ test: evil        ## prove the sandbox with the evil image, then run text, docum
 	bash tests/test_e2e.sh
 	bash tests/test_registry.sh
 	bash tests/test_compose.sh
+	bash tests/test_control.sh
 serve:
 	.venv/bin/sealed serve

@@ -294,3 +294,30 @@ def launcher(host, port):
     """Start the launcher: the only process that needs the Docker socket. Pair with `serve` via SEALED_LAUNCHER."""
     import uvicorn
     uvicorn.run("sealed.launcher:app", host=host, port=port)
+
+
+@main.command()
+@click.argument("control")
+@click.argument("token")
+def enroll(control, token):
+    """Enrol this runner with a control plane: sealed enroll https://control.example.com enr_xxx"""
+    from . import agent
+    import urllib.error
+    try:
+        st = agent.enroll(control, token)
+    except urllib.error.HTTPError as e:
+        click.echo(f"enrolment refused: HTTP {e.code} {e.read().decode(errors='replace')[:200]}", err=True)
+        sys.exit(3)
+    click.echo(f"enrolled as {st['runner_id']} with {st['control']} (state in {agent.STATE})")
+
+
+@main.command()
+@click.option("--interval", default=30)
+@click.option("--once", is_flag=True)
+def agent(interval, once):
+    """Heartbeat to the control plane, pull policy/trust config, push audit metadata."""
+    from . import agent as ag
+    if once:
+        click.echo(json.dumps(ag.heartbeat_once(json.loads(ag.STATE.read_text()))))
+    else:
+        ag.run(interval)

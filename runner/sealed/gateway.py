@@ -39,7 +39,10 @@ def execute(image: str, iid: str, entry: dict, op: str, input_value, params, pol
 from .pool import POOL
 from .documents import process_file, whole_text
 
+from .paths import HOME as _HOME
 POLICY_DIR = Path(os.environ.get("SEALED_POLICY_DIR", Path(__file__).resolve().parents[2] / "policies"))
+if (_HOME / "policies").exists() and any((_HOME / "policies").glob("*.yaml")):
+    POLICY_DIR = _HOME / "policies"          # policies distributed by the control plane take precedence
 GPU_FLAG = os.environ.get("SEALED_GPU", "0") == "1"
 
 app = FastAPI(title="sealed gateway", version="0.0.1")

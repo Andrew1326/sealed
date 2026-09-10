@@ -30,6 +30,20 @@ services:
       SEALED_RUNTIME: ""                            # set to runsc once gVisor is installed on the host
     restart: unless-stopped
 
+  agent:                                            # only with --profile managed (after `sealed enroll`)
+    image: sealed/gateway:0.0.1
+    profiles: [managed]
+    command: ["sealed", "agent"]
+    networks: [default, internal]                   # default: reaches the control plane; internal: reads launcher pool status
+    volumes:
+      - ${HOME}/.sealed:${HOME}/.sealed              # agent.json, audit offset, pushed policies/trust
+    environment:
+      SEALED_HOME: ${HOME}/.sealed
+      SEALED_LAUNCHER: http://launcher:8473
+    user: "${SEALED_UID:-1000}:${SEALED_GID:-1000}"
+    depends_on: [launcher]
+    restart: unless-stopped
+
 networks:
   internal:
     internal: true                                  # no route to the outside for either service

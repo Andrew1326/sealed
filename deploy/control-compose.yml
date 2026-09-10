@@ -1,0 +1,13 @@
+# The control plane. Run it anywhere reachable by your runners (a small VM is enough; it stores metadata only).
+#   SEALED_CONTROL_ADMIN_TOKEN=$(openssl rand -base64 24) docker compose -f deploy/control-compose.yml up -d --build
+services:
+  control:
+    build: {context: .., dockerfile: control/Dockerfile}
+    image: sealed/control:0.0.1
+    ports: ["8480:8480"]                           # put a TLS reverse proxy in front for anything beyond a LAN
+    volumes: [control-data:/data]
+    environment:
+      SEALED_CONTROL_ADMIN_TOKEN: ${SEALED_CONTROL_ADMIN_TOKEN:?set an admin token}
+    restart: unless-stopped
+volumes:
+  control-data:

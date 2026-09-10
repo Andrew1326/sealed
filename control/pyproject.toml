@@ -1,0 +1,16 @@
+[project]
+name = "sealed-control"
+version = "0.0.1"
+description = "sealed control plane: enrol runners, distribute policy and trust, collect audit metadata"
+requires-python = ">=3.10"
+dependencies = ["fastapi>=0.110", "uvicorn>=0.29", "pyyaml>=6"]
+
+[project.scripts]
+sealed-control = "sealed_control.app:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
