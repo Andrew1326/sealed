@@ -15,7 +15,27 @@ from . import registry
 from .gate import audit, check
 from .paths import AUDIT
 from .policy import Policy
-from .sandbox import run_job, wants_gpu
+from .sandbox import run_job, wants_gpu, RunResult
+import json as _json
+import urllib.request
+
+LAUNCHER = os.environ.get("SEALED_LAUNCHER", "").rstrip("/")   # e.g. http://launcher:8473 ; empty = run sandboxes from this process
+
+
+def execute(image: str, iid: str, entry: dict, op: str, input_value, params, policy: Policy, gpu: bool) -> RunResult:
+    if not LAUNCHER:
+        return run_job(image, op, input_value, params, memory=policy.memory, gpu=gpu, timeout=policy.timeout_seconds, warm=policy.warm)
+    body = _json.dumps({"image_id": iid, "op": op, "input": input_value, "params": params or {}, "memory": policy.memory,
+                        "timeout": policy.timeout_seconds, "warm": policy.warm}).encode()
+    req = urllib.request.Request(LAUNCHER + "/run", data=body, headers={"content-type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=policy.timeout_seconds + 30) as r:
+            d = _json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        raise HTTPException(e.code, _json.loads(e.read() or b"{}").get("detail", str(e)))
+    except Exception as e:
+        raise HTTPException(503, f"launcher unreachable: {e}")
+    return RunResult(ok=d["ok"], output=d.get("output"), error=d.get("error"), stderr=d.get("stderr", ""), duration=d.get("duration", 0))
 from .pool import POOL
 from .documents import process_file, whole_text
 
@@ -60,6 +80,9 @@ def audit_tail(n: int = 50):
 
 @app.get("/v1/pool")
 def pool_status():
+    if LAUNCHER:
+        with urllib.request.urlopen(LAUNCHER + "/pool", timeout=10) as r:
+            return _json.loads(r.read())
     return POOL.status()
 
 
@@ -72,7 +95,7 @@ def _resolve(policy: Policy, app_name: str, op: str):
         image = entry["image"]
         if op not in entry["operations"]:
             raise HTTPException(400, f"app '{app_name}' does not declare operation '{op}'")
-        if mf.image_id(image) != iid:
+        if not LAUNCHER and mf.image_id(image) != iid:      # with a launcher, the launcher does this check
             raise HTTPException(409, f"image '{image}' changed since verification; run `sealed verify` again")
         return image, iid, wants_gpu(entry, GPU_FLAG), entry
     if policy.require_verified:
@@ -92,7 +115,7 @@ async def submit_file(file: UploadFile = File(...), app_name: str = Form(..., al
     src.write_bytes(await file.read())
 
     def call(text):
-        res = run_job(image, op, text, prm, memory=policy.memory, gpu=gpu, timeout=policy.timeout_seconds, warm=policy.warm)
+        res = execute(image, iid, entry, op, text, prm, policy, gpu)
         verdict = check(policy, op, text, res.output) if res.ok else None
         audit(policy, image, iid, op, text, res.output if res.ok else None,
               verdict or type("V", (), {"allowed": False, "reason": res.error})(), res.duration, res.ok)
@@ -124,8 +147,8 @@ async def submit_file(file: UploadFile = File(...), app_name: str = Form(..., al
 @app.post("/v1/jobs")
 def submit(job: Job):
     policy = load_policy(job.policy)
-    image, iid, gpu, _ = _resolve(policy, job.app, job.op)
-    res = run_job(image, job.op, job.input, job.params, memory=policy.memory, gpu=gpu, timeout=policy.timeout_seconds, warm=policy.warm)
+    image, iid, gpu, entry = _resolve(policy, job.app, job.op)
+    res = execute(image, iid, entry, job.op, job.input, job.params, policy, gpu)
     verdict = check(policy, job.op, job.input, res.output) if res.ok else None
     audit(policy, image, iid, job.op, job.input, res.output if res.ok else None,
           verdict or type("V", (), {"allowed": False, "reason": res.error})(), res.duration, res.ok)

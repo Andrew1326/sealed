@@ -3,10 +3,33 @@ services:
     build: .
     image: sealed/gateway:0.0.1
     ports: ["127.0.0.1:8470:8470"]
+    networks: [default, internal]                   # default: reachable on localhost; internal: reaches the launcher
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock       # needed to launch sandboxes; the gateway never touches app data
-      - ${HOME}/.sealed:${HOME}/.sealed                  # allowlist, reports, audit log, verify tools (same path on host and in container)
+      - ${HOME}/.sealed:${HOME}/.sealed              # allowlist (read), audit log (write). NO docker socket here.
+    environment:
+      SEALED_HOME: ${HOME}/.sealed
+      SEALED_LAUNCHER: http://launcher:8473
+    depends_on: [launcher]
+    user: "${SEALED_UID:-1000}:${SEALED_GID:-1000}"    # owner of ~/.sealed, so the audit log stays writable with all caps dropped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+
+  launcher:
+    image: sealed/gateway:0.0.1
+    command: ["sealed", "launcher", "--host", "0.0.0.0"]
+    networks: [internal]                            # not published; only the gateway can reach it
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock   # the ONE place the socket is mounted
+      - ${HOME}/.sealed:${HOME}/.sealed:ro          # allowlist is the only input it trusts
     environment:
       SEALED_HOME: ${HOME}/.sealed
       SEALED_GPU: "0"
+      SEALED_RUNTIME: ""                            # set to runsc once gVisor is installed on the host
     restart: unless-stopped
+
+networks:
+  internal:
+    internal: true                                  # no route to the outside for either service

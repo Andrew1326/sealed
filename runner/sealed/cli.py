@@ -285,3 +285,12 @@ def install(name, base, version, build_args, gpu, tag):
         sys.exit(4)
     rep = _verify(tag, gpu=gpu, skip_scan=True)
     sys.exit(0 if rep.passed else 1)
+
+
+@main.command()
+@click.option("--host", default="127.0.0.1")
+@click.option("--port", default=8473)
+def launcher(host, port):
+    """Start the launcher: the only process that needs the Docker socket. Pair with `serve` via SEALED_LAUNCHER."""
+    import uvicorn
+    uvicorn.run("sealed.launcher:app", host=host, port=port)

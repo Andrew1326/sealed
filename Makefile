@@ -26,5 +26,6 @@ test: evil        ## prove the sandbox with the evil image, then run text, docum
 	bash tests/test_egress.sh
 	bash tests/test_e2e.sh
 	bash tests/test_registry.sh
+	bash tests/test_compose.sh
 serve:
 	.venv/bin/sealed serve

@@ -42,8 +42,11 @@ $S serve                   # HTTP gateway on 127.0.0.1:8470
 Gateway API: `POST /v1/jobs` (JSON text jobs), `POST /v1/files` (multipart upload: docx/txt/md/pdf in, same format out
 for translate, JSON for extract/summarize/classify), `GET /v1/apps`, `GET /v1/pool`, `GET /v1/audit`.
 
-Or as a service: `docker compose up -d` (gateway on 127.0.0.1:8470). It shares `~/.sealed` with the host, so
-`sealed verify` run on the host or via `docker compose exec gateway sealed verify <image>` both feed the same allowlist.
+Or as a service: `docker compose up -d`. Two containers: the **gateway** on 127.0.0.1:8470 (no Docker socket,
+read-only, no capabilities) and the **launcher** on an internal-only network, the single process holding the
+Docker socket. The launcher accepts exactly one request type: run operation X of an allowlisted image ID on this
+input. It resolves the image from the allowlist, never from the request. Both share `~/.sealed` with the host, so
+`sealed verify` on the host feeds the same allowlist.
 
 ## What is in the box
 
@@ -128,8 +131,13 @@ apps when the host has one.
 - **Does not cover:** hosted APIs (Gemini, GPT) that only exist remotely. They stay outside the guarantee.
   Use the `standard` policy and a pseudonymization pass for those, and know it is a reduction, not a guarantee.
 - **Warm pool shares one process across jobs of the same tenant.** Use `--cold` or `warm: false` in a policy when jobs must not share memory.
-- **Gateway needs the Docker socket.** Same trade-off Coolify makes. The gateway never reads app data
-  beyond passing the job in and the result out. A follow-up moves it behind a socket proxy limited to `run`.
+- **Privilege separation.** Only the launcher holds the Docker socket, and it can only run allowlisted images under
+  the contract. A compromised gateway gains nothing beyond what a legitimate one can do. The launcher trusts only the
+  allowlist file, so protect `~/.sealed` like you protect the host.
+- **gVisor / Kata.** Set `SEALED_RUNTIME=runsc` (or `kata-runtime`) once installed and every sandbox runs under a
+  user-space kernel or micro-VM. This is the mitigation for host-kernel escape bugs. Install on Ubuntu/Debian:
+  `sudo apt install runsc` after adding the gVisor apt repo (see gvisor.dev/docs/user_guide/install), then
+  `sudo runsc install && sudo systemctl restart docker`. The runner warns and falls back to runc if the runtime is not registered.
 
 ## Writing an app
 
@@ -145,5 +153,4 @@ OCR, virus scanning, PII redaction, signature checks, report generation. Same co
 
 - PDF output that keeps layout (currently pdf translates to txt).
 - Pseudonymization pass in the gateway for the `standard` tier.
-- gVisor/Kata runtime option and Docker socket proxy.
 - Management plane for deploying runners into customer cloud accounts.

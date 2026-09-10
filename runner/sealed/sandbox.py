@@ -10,6 +10,22 @@ import os
 import shutil
 
 DEFAULT_MEMORY = "8g"
+_runtime_checked: dict = {}
+
+
+def runtime_args() -> list:
+    """SEALED_RUNTIME=runsc (gVisor) or kata-runtime adds a user-space kernel / micro-VM between the app and
+    the host kernel, which is the mitigation for container-escape bugs. Falls back to runc with a warning."""
+    rt = os.environ.get("SEALED_RUNTIME", "").strip()
+    if not rt or rt == "runc":
+        return []
+    if rt not in _runtime_checked:
+        p = subprocess.run(["docker", "info", "--format", "{{json .Runtimes}}"], capture_output=True, text=True)
+        _runtime_checked[rt] = rt in (json.loads(p.stdout or "{}") or {})
+        if not _runtime_checked[rt]:
+            import sys
+            print(f"sealed: SEALED_RUNTIME={rt} is not registered with Docker, falling back to runc", file=sys.stderr)
+    return ["--runtime", rt] if _runtime_checked[rt] else []
 _DRIVER_LIBS = ["libcuda.so.1", "libnvidia-ml.so.1", "libnvidia-ptxjitcompiler.so.1", "libnvidia-nvvm.so.4"]
 
 
@@ -61,6 +77,7 @@ def sandbox_args(image: str, memory: str = DEFAULT_MEMORY, cpus: Optional[float]
     """The sandbox contract. Every flag here is mandatory; images cannot opt out."""
     args = [
         "docker", "run", "--rm", "-i",
+        *runtime_args(),
         "--network", "none",
         "--read-only",
         "--cap-drop", "ALL",
