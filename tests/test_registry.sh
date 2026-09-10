@@ -14,7 +14,7 @@ $S apps | grep -q translate-marian && echo "PASS installed"
 echo "== tampered entry must be refused with a signature error"
 T=$(mktemp -d); cp registry/*.json $T/
 sed -i 's/"memory": "4g"/"memory": "1m"/' $T/translate-marian-0.2.0.json
-$S install translate-marian --registry $T --no-verify 2>&1 | grep -q "INVALID signature" && echo "PASS tamper detected"
+OUT=$($S install translate-marian --registry $T --no-verify 2>&1 || true); grep -q "INVALID signature" <<<"$OUT" && echo "PASS tamper detected" || { echo "FAIL: $OUT"; exit 1; }
 echo "== wrong image ID must be refused"
 cp registry/*.json $T/
 python3 - $T <<'PY'
@@ -23,5 +23,5 @@ p=pathlib.Path(sys.argv[1])/"translate-marian-0.2.0.json"; e=json.loads(p.read_t
 # re-sign is impossible without the key, so this also exercises the signature check; keep it simple:
 p.write_text(json.dumps(e))
 PY
-$S install translate-marian --registry $T --no-verify 2>&1 | grep -qE "INVALID signature|does not match" && echo "PASS id mismatch refused"
+OUT=$($S install translate-marian --registry $T --no-verify 2>&1 || true); grep -qE "INVALID signature|does not match" <<<"$OUT" && echo "PASS id mismatch refused" || { echo "FAIL: $OUT"; exit 1; }
 rm -rf "$SEALED_HOME" "$T"
