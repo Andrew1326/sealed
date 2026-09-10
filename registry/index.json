@@ -1,5 +1,5 @@
 {
-  "updated": "2026-09-10T08:55:38Z",
+  "updated": "2026-09-10T15:57:53Z",
   "apps": [
     {
       "name": "docx2pdf",
@@ -33,6 +33,21 @@
       "entry": "extract-qwen-0.3.0.json"
     },
     {
+      "name": "pdf2docx",
+      "version": "0.1.0",
+      "description": "Rebuild a PDF as an editable DOCX with real paragraphs and tables (pdf2docx + PyMuPDF), fully offline. Not an AI app.",
+      "operations": [
+        "convert"
+      ],
+      "requires": {
+        "gpu": "none",
+        "memory": "2g",
+        "timeout_seconds": 300
+      },
+      "source": "pdf2docx-0.1.0.src.tar.gz",
+      "entry": "pdf2docx-0.1.0.json"
+    },
+    {
       "name": "qwen3-4b",
       "version": "0.2.0",
       "description": "Quality tier: Qwen3-4B-Instruct for translation (any language pair), summarization, extraction and classification. GPU recommended, runs on CPU.",
@@ -52,7 +67,7 @@
     },
     {
       "name": "translate-marian",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "description": "Offline neural translation (Helsinki-NLP OPUS-MT). Pairs: en-de, de-en, en-ru, ru-en, en-fr, fr-en.",
       "operations": [
         "translate"
@@ -62,8 +77,8 @@
         "memory": "4g",
         "timeout_seconds": 300
       },
-      "source": "translate-marian-0.3.0.src.tar.gz",
-      "entry": "translate-marian-0.3.0.json"
+      "source": "translate-marian-0.3.1.src.tar.gz",
+      "entry": "translate-marian-0.3.1.json"
     }
   ]
 }

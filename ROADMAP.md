@@ -17,7 +17,7 @@ Working order. Engineering first, launch material when media is ready. Updated a
 2. [x] **Control panel UI**: console design system (light/dark), login, runners with detail and per-runner overrides, policy editor with validation, trusted keys, enrol tokens, audit browser with filters, webhook alerts, settings
 3. [x] **TLS**: self-signed certs built in, runners pin the control plane fingerprint, both services refuse public binds without TLS, Caddy alternative documented
 4. [x] **Pseudonymization pass** for the `standard` tier, plus the remote-provider path it protects (OpenAI-compatible endpoints, refused under any confidential policy)
-5. [ ] **PDF with layout**: pdf -> docx via LibreOffice, translate, -> pdf
+5. [x] **PDF with layout**: pdf2docx app (PyMuPDF) -> translate -> docx2pdf, PDF in, PDF out
 6. [ ] **CUDA variants** of translate-marian and extract-qwen in the registry
 7. [ ] **More catalog apps** driven by customer conversations: OCR, PII redaction, speech-to-text, spreadsheets
 8. [ ] **Cloud automation**: control plane creates the runner VM through a provider API (Hetzner first)

@@ -1,6 +1,6 @@
 {
   "name": "translate-marian",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Offline neural translation (Helsinki-NLP OPUS-MT). Pairs: en-de, de-en, en-ru, ru-en, en-fr, fr-en.",
   "vendor": "sealed (community)",
   "license": "Apache-2.0",

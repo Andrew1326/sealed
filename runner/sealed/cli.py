@@ -117,10 +117,29 @@ def run(app, op, policy_path, param, file_, out_, gpu, cold, unverified):
         else:
             click.echo(output if isinstance(output, str) else json.dumps(output, ensure_ascii=False, indent=2))
         return
+    def converter(name):
+        h = registry.find_by_name(name)
+        if not h:
+            return None
+        cid, centry = h
+
+        def conv(data: bytes) -> bytes:
+            r = run_job(centry["image"], "convert", base64.b64encode(data).decode(), {}, memory=pol.memory,
+                        gpu=False, timeout=pol.timeout_seconds, warm=warm)
+            audit(pol, centry["image"], cid, "convert", "<binary>", None, type("V", (), {"allowed": r.ok, "reason": r.error})(), r.duration, r.ok)
+            if not r.ok:
+                click.echo(f"{name} failed: {r.error}\n{r.stderr[-400:]}", err=True)
+                sys.exit(1)
+            return base64.b64decode(r.output)
+        return conv
+
     if file_ and Path(file_).suffix.lower() in (".docx", ".pdf", ".txt", ".md", ".csv") and op == "translate":
         src = Path(file_)
         dst = Path(out_) if out_ else src.with_name(f"{src.stem}.{params.get('target', 'out')}{src.suffix}")
-        dst = process_file(src, dst, call, pol.chunk_chars, log=lambda m: click.echo(m, err=True))
+        convs = {k: v for k, v in {"pdf2docx": converter("pdf2docx"), "docx2pdf": converter("docx2pdf")}.items() if v}
+        if src.suffix.lower() == ".pdf" and len(convs) < 2:
+            click.echo("note: pdf2docx and docx2pdf are not both verified, so the PDF comes back as text", err=True)
+        dst = process_file(src, dst, call, pol.chunk_chars, log=lambda m: click.echo(m, err=True), converters=convs)
         click.echo(f"wrote {dst}")
         return
     if file_:

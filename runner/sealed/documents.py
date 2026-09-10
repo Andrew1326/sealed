@@ -2,21 +2,39 @@
 
 txt/md : paragraphs preserved.
 docx   : every paragraph and table cell is a unit; formatting of the first run is kept.
-pdf    : text extracted with pypdf; output is .txt (layout is not reconstructed, and we say so).
+pdf    : with converters (pdf2docx + docx2pdf apps verified): pdf -> docx -> translate -> pdf, layout kept.
+         without: text extracted with pypdf; output is .txt, and we say so.
 Units are batched into chunks of ~policy.chunk_chars, one job per chunk, joined with newlines so the
 app sees paragraph boundaries. If an app returns a different number of lines than it was given, the
 chunk is retried unit by unit.
 """
 import json
 import re
+import tempfile
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 TEXT_EXT = {".txt", ".md", ".csv"}
 
 
 def _units_txt(path: Path) -> List[str]:
     return path.read_text(encoding="utf-8", errors="replace").split("\n")
+
+
+def _run_groups(paragraph):
+    """Consecutive runs that share bold/italic/size form one unit. A heading that a PDF converter glued to
+    its body paragraph therefore translates as its own sentence and keeps its own style."""
+    groups, cur, key = [], [], None
+    for r in paragraph.runs:
+        k = (bool(r.bold), bool(r.italic), r.font.size.pt if r.font.size else None)
+        if cur and k != key and r.text.strip() and "".join(x.text for x in cur).strip():
+            groups.append(cur)
+            cur = []
+        cur.append(r)
+        key = k
+    if cur:
+        groups.append(cur)
+    return groups
 
 
 def _units_docx(path: Path):
@@ -27,7 +45,18 @@ def _units_docx(path: Path):
         for row in t.rows:
             for cell in row.cells:
                 paras.extend(cell.paragraphs)
-    return d, paras
+    targets = []          # list of run groups; each group is translated as one unit
+    for p in paras:
+        for ts in p.paragraph_format.tab_stops:
+            try:
+                ts.leader = 0     # WD_TAB_LEADER.SPACES: no dot fill after a converted PDF
+            except Exception:
+                pass
+        if not p.runs:
+            continue
+        gs = _run_groups(p)
+        targets.extend(gs if len(gs) > 1 else [p.runs])
+    return d, targets
 
 
 def _units_pdf(path: Path) -> List[str]:
@@ -101,21 +130,39 @@ def transform_units(units: List[str], run: Callable[[str], object], chunk_chars:
     return out
 
 
-def process_file(src: Path, dst: Path, run: Callable[[str], object], chunk_chars: int, log=None) -> Path:
+def process_file(src: Path, dst: Path, run: Callable[[str], object], chunk_chars: int, log=None,
+                 converters: Optional[Dict[str, Callable[[bytes], bytes]]] = None) -> Path:
+    """converters: {"pdf2docx": bytes->bytes, "docx2pdf": bytes->bytes} enables the layout-preserving PDF path."""
     ext = src.suffix.lower()
+    conv = converters or {}
+    if ext == ".pdf" and "pdf2docx" in conv and "docx2pdf" in conv:
+        work = Path(tempfile.mkdtemp(prefix="sealed-pdf-"))
+        mid = work / "in.docx"
+        mid.write_bytes(conv["pdf2docx"](src.read_bytes()))
+        if log:
+            log("pdf rebuilt as docx (pdf2docx)")
+        out_docx = process_file(mid, work / "out.docx", run, chunk_chars, log)
+        if dst.suffix.lower() != ".pdf":
+            dst = dst.with_suffix(".pdf")
+        dst.write_bytes(conv["docx2pdf"](out_docx.read_bytes()))
+        if log:
+            log("docx rendered back to pdf (docx2pdf)")
+        return dst
     if ext in TEXT_EXT:
         units = _units_txt(src)
         dst.write_text("\n".join(transform_units(units, run, chunk_chars, log)), encoding="utf-8")
         return dst
     if ext == ".docx":
-        d, paras = _units_docx(src)
-        units = [p.text for p in paras]
+        d, groups = _units_docx(src)
+        units = ["".join(r.text for r in g) for g in groups]
         new = transform_units(units, run, chunk_chars, log)
-        for p, t in zip(paras, new):
-            if p.text == t or not p.runs:
+        for g, old, t in zip(groups, units, new):
+            if old == t:
                 continue
-            p.runs[0].text = t
-            for r in p.runs[1:]:
+            lead = old[: len(old) - len(old.lstrip())]
+            trail = old[len(old.rstrip()):]
+            g[0].text = lead + t.strip() + trail
+            for r in g[1:]:
                 r.text = ""
         if dst.suffix.lower() != ".docx":
             dst = dst.with_suffix(".docx")
@@ -135,8 +182,8 @@ def whole_text(src: Path) -> str:
     if ext in TEXT_EXT:
         return src.read_text(encoding="utf-8", errors="replace")
     if ext == ".docx":
-        _, paras = _units_docx(src)
-        return "\n".join(p.text for p in paras)
+        _, groups = _units_docx(src)
+        return "\n".join("".join(r.text for r in g) for g in groups)
     if ext == ".pdf":
         return "\n".join(_units_pdf(src))
     raise ValueError(f"unsupported file type {ext}")

@@ -1,0 +1,5 @@
+[
+  {"input": {"file": "tests/sample.pdf"}, "params": {}, "expect": {"starts_with": "UEsDB", "min_chars": 4000}},
+  {"input": "", "params": {}, "expect": {"ok": false}},
+  {"input": "bm90IGEgcGRm", "params": {}, "expect": {"ok": false}}
+]

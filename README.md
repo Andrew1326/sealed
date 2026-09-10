@@ -34,7 +34,8 @@ Then:
 ```bash
 S=.venv/bin/sealed
 echo "This agreement is confidential." | $S run translate-marian --op translate -p source=en -p target=de
-$S run translate-marian --op translate -p source=en -p target=de --file contract.docx --out contract.de.docx   # docx, txt, md, pdf
+$S run translate-marian --op translate -p source=en -p target=de --file contract.docx --out contract.de.docx   # docx, txt, md
+$S run translate-marian --op translate -p source=en -p target=de --file contract.pdf --out contract.de.pdf     # pdf -> pdf, layout kept
 $S run extract-qwen --op extract --file contract.docx
 $S run docx2pdf --op convert --file contract.docx --out contract.pdf                 # not AI: LibreOffice in the same sandbox
 $S run qwen3-4b --op translate -p source=en -p target=ru --file contract.docx      # quality tier, any language pair, uses the GPU
@@ -64,8 +65,8 @@ input. It resolves the image from the allowlist, never from the request. Both sh
 | Policies | `policies/*.yaml` | `confidential` (verified only, strict) and `standard` (any image, still sandboxed). |
 | Spec | `spec/` | Manifest schema and the stdin/stdout job protocol an app must implement. |
 | Warm pool | `runner/sealed/pool.py` | One loaded container per app kept alive between jobs (same sandbox). First job pays the model load, later jobs take milliseconds. |
-| Documents | `runner/sealed/documents.py` | docx/txt/md/pdf in, chunked into jobs, rebuilt with formatting and tables kept (pdf comes back as txt). |
-| Apps | `apps/` | `translate-marian` (OPUS-MT, 6 pairs, CPU), `extract-qwen` (Qwen2.5-1.5B, CPU), `qwen3-4b` (quality tier: translate any pair, summarize, extract, classify; GPU), `docx2pdf` (LibreOffice, not AI), `evil` (test image). |
+| Documents | `runner/sealed/documents.py` | docx/txt/md/pdf in, chunked into jobs, rebuilt with formatting and tables kept. PDF goes pdf2docx -> translate -> docx2pdf and comes back as a PDF; without those two apps it falls back to text. |
+| Apps | `apps/` | `translate-marian` (OPUS-MT, 6 pairs, CPU), `extract-qwen` (Qwen2.5-1.5B, CPU), `qwen3-4b` (quality tier: translate any pair, summarize, extract, classify; GPU), `docx2pdf` (LibreOffice), `pdf2docx` (PyMuPDF), both not AI, `evil` (test image). |
 
 ## The admission pipeline (`sealed verify`)
 
@@ -92,9 +93,9 @@ guarantee comes from the user's own `verify` run, the publisher's signature only
 ```bash
 # publisher
 sealed keygen                                                  # Ed25519 key in ~/.sealed/keys, trusted locally
-docker build -t sealed/translate-marian:0.3.0 apps/translate
-sealed verify sealed/translate-marian:0.3.0
-sealed sign apps/translate --image sealed/translate-marian:0.3.0   # writes registry/<name>-<ver>.src.tar.gz + .json + index.json
+docker build -t sealed/translate-marian:0.3.1 apps/translate
+sealed verify sealed/translate-marian:0.3.1
+sealed sign apps/translate --image sealed/translate-marian:0.3.1   # writes registry/<name>-<ver>.src.tar.gz + .json + index.json
 # user
 sealed trust <publisher public key> "sealed community"
 sealed catalog --registry https://raw.githubusercontent.com/<org>/sealed/main/registry
@@ -206,6 +207,7 @@ re-enrolled, which is the intended trade: no silent substitution.
 | translate-marian, 6-section contract.docx with table | 10 s | |
 | qwen3-4b, same contract to Russian | 21 s | |
 | docx2pdf, same contract (LibreOffice) | 0.9 s | 0.5 s |
+| contract.pdf -> German PDF (pdf2docx + marian + docx2pdf) | 12 s | |
 
 ## GPU
 
@@ -246,6 +248,5 @@ OCR, virus scanning, PII redaction, signature checks, report generation. Same co
 
 ## Roadmap
 
-- PDF output that keeps layout (currently pdf translates to txt).
 - Pseudonymization pass in the gateway for the `standard` tier.
 - Control plane: web UI for editing policies, per-runner policy, alerting on blocked outputs, TLS by default.

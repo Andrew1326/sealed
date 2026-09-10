@@ -196,9 +196,25 @@ async def submit_file(file: UploadFile = File(...), app_name: str = Form(..., al
             dst.write_bytes(base64.b64decode(output))
             return FileResponse(str(dst), filename=dst.name, media_type=out_type)
         return {"ok": True, "app": app_name, "image_id": iid, "op": op, "file": src.name, "output": output}
+    def converter(name):
+        h = registry.find_by_name(name)
+        if not h:
+            return None
+        cid, centry = h
+
+        def conv(data: bytes) -> bytes:
+            r = execute(centry["image"], cid, centry, "convert", base64.b64encode(data).decode(), {}, policy, False)
+            audit(policy, centry["image"], cid, "convert", "<binary>", None, type("V", (), {"allowed": r.ok, "reason": r.error})(),
+                  r.duration, r.ok, client=c["label"])
+            if not r.ok:
+                raise HTTPException(502, {"error": f"{name} failed: {r.error}"})
+            return base64.b64decode(r.output)
+        return conv
+
     if op == "translate":
         dst = tmp / f"{src.stem}.{prm.get('target', 'out')}{src.suffix}"
-        dst = process_file(src, dst, call, policy.chunk_chars)
+        convs = {k: v for k, v in {"pdf2docx": converter("pdf2docx"), "docx2pdf": converter("docx2pdf")}.items() if v}
+        dst = process_file(src, dst, call, policy.chunk_chars, converters=convs)
         return FileResponse(str(dst), filename=dst.name)
     return {"ok": True, "app": app_name, "image_id": iid, "op": op, "file": src.name, "output": call(whole_text(src))}
 

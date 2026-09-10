@@ -26,11 +26,17 @@ def translate(text, pair):
         if not para.strip():
             out_paras.append("")
             continue
-        sents = [s for s in re.split(r"(?<=[.!?])\s+", para.strip()) if s]
-        batch = tok(sents, return_tensors="pt", padding=True, truncation=True, max_length=512).to(dev)
-        with torch.no_grad():
-            gen = model.generate(**batch, max_new_tokens=512, num_beams=2)
-        out_paras.append(" ".join(tok.batch_decode(gen, skip_special_tokens=True)))
+        # split on sentence ends, but never after an enumeration like "3." or "4.1." (a lone number is garbage to the model)
+        sents = [s for s in re.split(r"(?<!\d\.)(?<=[.!?])\s+(?=\S)", para.strip()) if s]
+        todo = [i for i, s in enumerate(sents) if re.search(r"[A-Za-zÀ-ÿА-я]{2,}", s)]   # fragments without words pass through
+        out = list(sents)
+        if todo:
+            batch = tok([sents[i] for i in todo], return_tensors="pt", padding=True, truncation=True, max_length=512).to(dev)
+            with torch.no_grad():
+                gen = model.generate(**batch, max_new_tokens=512, num_beams=2)
+            for i, t in zip(todo, tok.batch_decode(gen, skip_special_tokens=True)):
+                out[i] = t
+        out_paras.append(" ".join(out))
     return "\n".join(out_paras)
 
 

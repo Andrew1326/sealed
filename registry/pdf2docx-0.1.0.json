@@ -1,0 +1,24 @@
+{
+  "name": "pdf2docx",
+  "version": "0.1.0",
+  "description": "Rebuild a PDF as an editable DOCX with real paragraphs and tables (pdf2docx + PyMuPDF), fully offline. Not an AI app.",
+  "operations": [
+    "convert"
+  ],
+  "requires": {
+    "gpu": "none",
+    "memory": "2g",
+    "timeout_seconds": 300
+  },
+  "models": [],
+  "source": {
+    "file": "pdf2docx-0.1.0.src.tar.gz",
+    "sha256": "833860a4a84ee2ab6fa0461938beca20db7728600c149a5e1cbe4f7b90a67b0b",
+    "build_args": {}
+  },
+  "publisher_image_id": "sha256:d640566acf3d47ac460f4370cc28632164ba788eaeedd0df93be216e81fe100f",
+  "publisher_report_sha256": "017c4c7e54ec167b758d18a04cc1c16deddd6fafdbf80e9b7e5f0d49fea861ec",
+  "signed_at": "2026-09-10T12:23:29Z",
+  "publisher_key": "lCQf6IWKfq+5u50EoD+yGgyTFuuD7Vzw5CewbfIYlts=",
+  "signature": "g+7PczGZPwwQovuQDlw7ZdLWegD8zn6OU4TsADKZthkqK0mw2x/pbHuzWmSaVNhLpVrkSN4Vrg11Y+073AuIBw=="
+}

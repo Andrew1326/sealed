@@ -7,10 +7,10 @@ D=tests/data
 OUT=$(mktemp -d)
 echo "== translate (text, warm pool inside one CLI call)"
 echo "This agreement is confidential. The buyer pays 250,000 euros on delivery." | $S run translate-marian --op translate -p source=en -p target=de
-echo "== translate documents: docx -> docx, txt -> txt, pdf -> txt"
+echo "== translate documents: docx -> docx, txt -> txt, pdf -> pdf (pdf2docx + docx2pdf)"
 $S run translate-marian --op translate -p source=en -p target=de --file $D/contract.docx --out $OUT/contract.de.docx
 $S run translate-marian --op translate -p source=en -p target=fr --file $D/memo.txt --out $OUT/memo.fr.txt
-$S run translate-marian --op translate -p source=en -p target=ru --file $D/contract.pdf --out $OUT/contract.ru.txt
+$S run translate-marian --op translate -p source=en -p target=ru --file $D/contract.pdf --out $OUT/contract.ru.pdf
 .venv/bin/python - "$OUT" <<'PY'
 import sys, docx
 from pathlib import Path
@@ -20,8 +20,10 @@ assert any(r.bold for p in d.paragraphs for r in p.runs), "bold run lost"
 assert d.tables[0].rows[4].cells[1].text == "300", "table cell lost"
 assert "Vereinbarung" in d.paragraphs[1].text or "Abkommen" in d.paragraphs[0].text, d.paragraphs[1].text
 assert "CONFIDENTIEL" in (out / "memo.fr.txt").read_text().upper()
-assert "Соглашение" in (out / "contract.ru.txt").read_text()
-print("documents ok: formatting, table and content preserved")
+from pypdf import PdfReader
+r = PdfReader(out / "contract.ru.pdf")
+assert len(r.pages) >= 2 and "Соглашение" in r.pages[0].extract_text(), "pdf -> pdf translation lost content"
+print("documents ok: formatting, table and content preserved; pdf came back as a 2-page pdf")
 PY
 echo "== non-AI app: docx -> pdf with LibreOffice in the same sandbox"
 $S run docx2pdf --op convert --file $D/contract.docx --out $OUT/contract.pdf

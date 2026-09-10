@@ -1,6 +1,6 @@
 {
   "name": "translate-marian",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Offline neural translation (Helsinki-NLP OPUS-MT). Pairs: en-de, de-en, en-ru, ru-en, en-fr, fr-en.",
   "operations": [
     "translate"
@@ -43,13 +43,13 @@
     }
   ],
   "source": {
-    "file": "translate-marian-0.3.0.src.tar.gz",
-    "sha256": "9d79d997b175ea1150fcc515b0019716823c75415ae2f534730bc4e858e6e642",
+    "file": "translate-marian-0.3.1.src.tar.gz",
+    "sha256": "a6d7d61e4ec543fe32daac813a81d1505bff1e1cdbc74aea18e344da14322f06",
     "build_args": {}
   },
-  "publisher_image_id": "sha256:431736e0a879f7589a9a6f206a80fb07f6f19597b3a442fce39cda9096f9b4be",
-  "publisher_report_sha256": "fcc57b2e0f0f4a4e4d2adafed3f7b6a2a2fba0af5c8114313410fb042d38c5ca",
-  "signed_at": "2026-09-10T08:46:49Z",
+  "publisher_image_id": "sha256:7467fbc60eafe99752b1825bd742985cd0a23fe7e6a9ec68d41e0107119c90e1",
+  "publisher_report_sha256": "e3a9f040a69f0f74891f7a43a705fa4af85e94a1a6a9d7a6696e4020adfb5b34",
+  "signed_at": "2026-09-10T15:57:53Z",
   "publisher_key": "lCQf6IWKfq+5u50EoD+yGgyTFuuD7Vzw5CewbfIYlts=",
-  "signature": "nYyOb18Zme2a15fe1S0rxdwS99VBRrbOoGCYhKVZdf+vQ3drFkYOSc1kEkgNOrUNeRZiS0PT6N2wAdi50TiYBQ=="
+  "signature": "hPCrKKay11x0q/89eohnl67thzacFwBc24u4tRbQrHJZr8WmgTk+97FkuT7nYyWyXy6tBwiWtVmO0+sAXgdrAQ=="
 }
