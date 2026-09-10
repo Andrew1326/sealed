@@ -1,8 +1,13 @@
-"""Control panel: server-rendered pages over the same SQLite state as the API. Login = admin token in a cookie."""
+"""Control panel: a dense operator console over the same SQLite state as the API.
+
+Design system: see theme.py (adapted from the "Local SEO Console" variant).
+Grammar per page: PageBar -> StatStrip -> the Object -> side rail. At lg+ workspace
+pages pin to the viewport and each pane scrolls itself.
+"""
 import html
 import json
 import time
-import urllib.request
+import urllib.parse
 from typing import Optional
 
 import yaml
@@ -10,40 +15,88 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from . import app as core
+from .theme import CSS, JS, icon
 
 r = APIRouter()
 COOKIE = "sealed_admin"
 
-CSS = """
-*{box-sizing:border-box}body{font-family:system-ui,sans-serif;margin:0;color:#1d1d1f;background:#f5f5f7}
-nav{background:#111;color:#eee;padding:.7rem 1.5rem;display:flex;gap:1.2rem;align-items:center;flex-wrap:wrap}
-nav a{color:#ddd;text-decoration:none}nav a.on,nav a:hover{color:#fff;border-bottom:2px solid #6cf}nav b{margin-right:1rem}
-main{padding:1.5rem;max-width:1200px}h1{font-size:1.4rem;margin:.2rem 0 1rem}h2{font-size:1.05rem;margin:1.5rem 0 .5rem}
-table{border-collapse:collapse;width:100%;background:#fff;border-radius:8px;overflow:hidden}td,th{padding:.45rem .7rem;border-bottom:1px solid #eee;text-align:left;font-size:14px;vertical-align:top}
-th{background:#fafafa;font-weight:600}small,.muted{color:#777}code{background:#eee;padding:.1rem .3rem;border-radius:4px;font-size:13px}
-textarea{width:100%;min-height:220px;font-family:ui-monospace,monospace;font-size:13px;padding:.6rem;border:1px solid #ccc;border-radius:6px}
-input[type=text],input[type=url],input[type=password],select{padding:.4rem .5rem;border:1px solid #ccc;border-radius:6px;font-size:14px;min-width:16rem}
-button{background:#111;color:#fff;border:0;border-radius:6px;padding:.45rem .9rem;font-size:14px;cursor:pointer}button.danger{background:#b3261e}
-.card{background:#fff;border-radius:8px;padding:1rem 1.2rem;margin-bottom:1rem;box-shadow:0 1px 2px rgba(0,0,0,.06)}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.8rem}.kpi b{font-size:1.6rem;display:block}
-.ok{color:#1a7f37}.bad{color:#b3261e}.flash{background:#e8f4ff;border-left:4px solid #3b82f6;padding:.6rem .9rem;margin-bottom:1rem;border-radius:4px}
-.err{background:#fdecea;border-left-color:#b3261e}form.inline{display:inline}
-"""
+NAV = [
+    ("Fleet", [("overview", "Overview", "/ui/overview"), ("runners", "Runners", "/ui/runners")]),
+    ("Policy", [("policies", "Policies", "/ui/policies"), ("trust", "Trust", "/ui/trust"),
+                ("tokens", "Enrol tokens", "/ui/tokens")]),
+    ("Activity", [("audit", "Audit", "/ui/audit"), ("alerts", "Alerts", "/ui/alerts")]),
+    ("", [("settings", "Settings", "/ui/settings")]),
+]
 
 
 def esc(x) -> str:
     return html.escape(str(x if x is not None else ""))
 
 
-def page(title: str, body: str, active: str = "", flash: str = "", err: bool = False) -> HTMLResponse:
-    tabs = [("overview", "Overview"), ("runners", "Runners"), ("policies", "Policies"), ("trust", "Trust"),
-            ("tokens", "Enrol tokens"), ("audit", "Audit"), ("alerts", "Alerts"), ("settings", "Settings")]
-    nav = "".join(f'<a href="/ui/{k}" class="{"on" if k == active else ""}">{v}</a>' for k, v in tabs)
-    fl = f'<div class="flash {"err" if err else ""}">{esc(flash)}</div>' if flash else ""
-    return HTMLResponse(f"<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>{esc(title)} · sealed control</title>"
-                        f"<style>{CSS}</style><nav><b>sealed control</b>{nav}<span style='flex:1'></span><a href='/ui/logout'>Log out</a></nav><main>{fl}{body}</main>")
+def q(x) -> str:
+    return urllib.parse.quote(str(x or ""))
 
 
+# ---------- health language: one module, every colour flows through it ----------
+def runner_health(last_seen: Optional[float]) -> str:
+    if not last_seen:
+        return "none"
+    d = time.time() - last_seen
+    return "good" if d < 120 else "watch" if d < 600 else "action"
+
+
+def ago(ts: Optional[float]) -> str:
+    if not ts:
+        return "never"
+    d = int(time.time() - ts)
+    if d < 90:
+        return f"{d}s ago"
+    if d < 5400:
+        return f"{d // 60}m ago"
+    if d < 172800:
+        return f"{d // 3600}h ago"
+    return f"{d // 86400}d ago"
+
+
+def stamp(ts: Optional[float], verb: str = "Seen") -> str:
+    h = runner_health(ts)
+    cls = "stamp stale" if h in ("watch", "action") else "stamp"
+    return f'<span class="{cls}">{verb} {esc(ago(ts))}</span>'
+
+
+def app_list(apps: list, keep: int = 2) -> str:
+    """Dense app column: name the first few, count the rest. Keeps the row on one line."""
+    names = [a.get("name", "") for a in apps if a.get("name")]
+    if not names:
+        return '<span class=dim>—</span>'
+    shown = ", ".join(names[:keep])
+    more = f' <span class="pill">+{len(names) - keep}</span>' if len(names) > keep else ""
+    return f'{esc(shown)}{more}'
+
+
+def op_badge(op: str) -> str:
+    known = {"translate", "summarize", "convert", "extract", "classify"}
+    return f'<span class="op {esc(op) if op in known else "other"}">{esc(op)}</span>'
+
+
+def gate_cell(a) -> str:
+    """The verdict only. The reason rides under the image so the row stays one line high."""
+    if not a["app_ok"]:
+        return '<span class="pill action">app error</span>'
+    return ('<span class="pill good">allow</span>' if a["gate"] == "allow"
+            else '<span class="pill action">blocked</span>')
+
+
+def image_cell(a) -> str:
+    reason = a["gate_reason"] if (a["gate"] != "allow" or not a["app_ok"]) else ""
+    if reason:
+        return (f'<div class=two-line title="{esc(reason)}">{esc(a["image"])}'
+                f'<small class=bad>{esc(reason)}</small></div>')
+    return esc(a["image"])
+
+
+
+# ---------- shell ----------
 def authed(request: Request) -> bool:
     return request.cookies.get(COOKIE) == core.ADMIN
 
@@ -52,25 +105,114 @@ def gate(request: Request):
     return None if authed(request) else RedirectResponse("/ui/login", status_code=303)
 
 
-def ago(ts: Optional[float]) -> str:
-    if not ts:
-        return "never"
-    d = int(time.time() - ts)
-    return f"{d}s ago" if d < 90 else f"{d // 60}m ago" if d < 5400 else f"{d // 3600}h ago"
+def nav_counts() -> dict:
+    with core.db() as c:
+        runners = c.execute("SELECT last_seen FROM runners").fetchall()
+        tokens = c.execute("SELECT COUNT(*) FROM enroll_tokens WHERE used_by IS NULL").fetchone()[0]
+        blocked = c.execute("SELECT COUNT(*) FROM audit WHERE gate='block' OR app_ok=0").fetchone()[0]
+    cfg = core.get_config_raw()
+    return {"runners": f'{sum(runner_health(r[0]) == "good" for r in runners)}/{len(runners)}',
+            "policies": len(cfg.get("policies") or {}) or "", "trust": len(cfg.get("trusted_keys") or {}) or "",
+            "tokens": tokens or "", "alerts": blocked or ""}
+
+
+def page(title: str, body: str, active: str = "", crumbs: Optional[list] = None,
+         flash: str = "", err: bool = False) -> HTMLResponse:
+    counts = nav_counts()
+    groups = ""
+    for label, items in NAV:
+        links = "".join(
+            f'<a href="{href}" class="{"on" if key == active else ""}">{icon(key)}<span>{name}</span>'
+            f'<span class="count">{esc(counts.get(key, ""))}</span></a>' for key, name, href in items)
+        groups += (f'<div class="nav-label">{esc(label)}</div>' if label else "") + links
+    trail = crumbs or [("Fleet", None), (title, None)]
+    cr = ""
+    for i, (lbl, href) in enumerate(trail):
+        if i:
+            cr += '<span class="sep">/</span>'
+        last = i == len(trail) - 1
+        inner = esc(lbl)
+        cr += (f'<a class="lv{" cur" if last else ""}" href="{href}">{inner}</a>' if href
+               else f'<span class="lv{" cur" if last else ""}">{inner}</span>')
+    fl = f'<div class="flash{" err" if err else ""}">{esc(flash)}</div>' if flash else ""
+    return HTMLResponse(f"""<!doctype html><html lang=en><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1"><link rel=icon href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23004ac6'/%3E%3Ctext x='16' y='22' font-family='system-ui' font-size='18' font-weight='700' fill='white' text-anchor='middle'%3ES%3C/text%3E%3C/svg%3E"><title>{esc(title)} · sealed control</title>
+<style>{CSS}</style><script>{JS}</script></head><body>
+<div class=scrim onclick=sealedNav()></div>
+<aside class=sidebar>
+  <div class=sidebar-head><div class=mark>S</div><div class=wordmark>sealed <span>control</span></div></div>
+  <nav class=nav>{groups}</nav>
+  <div class=side-foot>
+    <button class="btn ghost" onclick=sealedTheme() title="Light / dark">{icon('theme')}<span>Theme</span></button>
+    <a class="btn ghost" href="/ui/logout" style="margin-left:auto">Log out</a>
+  </div>
+</aside>
+<div class=shell>
+  <header class=topbar>
+    <button class=burger onclick=sealedNav() aria-label="Menu">☰</button>
+    <div class=crumbs>{cr}</div>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:.6rem">
+      <form method=get action="/ui/audit" style="display:none" class=topsearch></form>
+      <div class=avatar title="Signed in as admin">AD</div>
+    </div>
+  </header>
+  <main>{fl}{body}</main>
+</div></body></html>""")
+
+
+# ---------- building blocks ----------
+def strip(cells: list) -> str:
+    """StatStrip: hairline KPI row. Cells are doors (href) or filters (pressed)."""
+    out = ""
+    for c in cells:
+        label, value = esc(c["label"]), c["value"]
+        chip = c.get("chip", "")
+        inner = f'<p class="k">{label}</p><p class="v">{value}{chip}</p>'
+        if c.get("href"):
+            out += f'<a class=cell href="{c["href"]}"{" aria-pressed=true" if c.get("on") else ""}>{inner}</a>'
+        else:
+            out += f'<div class=cell>{inner}</div>'
+    return f'<div class=strip><div class=strip-grid>{out}</div></div>'
+
+
+def table(cols: list, rows: str, toolbar: str = "", empty: str = "Nothing here yet", empty_action: str = "",
+          slack: bool = True) -> str:
+    """slack=True lets the LAST column absorb leftover width (right-aligned), so every other
+    column sits at content width instead of the browser spreading them out."""
+    head = "".join(f'<th class="{c.get("cls","")}">{esc(c["label"])}</th>' for c in cols)
+    body = rows or f'<tr><td colspan={len(cols)}><div class=tbl-empty><b>{esc(empty)}</b>{empty_action}</div></td></tr>'
+    tb = f'<div class=tbl-toolbar>{toolbar}</div>' if toolbar else ""
+    return (f'<div class="tbl-card{" slack" if slack else ""}">{tb}<div class=tbl-scroll><table><thead><tr>{head}</tr></thead>'
+            f'<tbody>{body}</tbody></table></div></div>')
+
+
+def card(title: str, body: str, right: str = "") -> str:
+    h = f'<div class=card-h><h2>{esc(title)}</h2><div class=right>{right}</div></div>' if title else ""
+    return f'<section class=card>{h}<div class=card-b>{body}</div></section>'
 
 
 # ---------- login ----------
 @r.get("/ui/login", response_class=HTMLResponse)
-def login_form(request: Request):
-    return HTMLResponse(f"<!doctype html><meta charset=utf-8><title>sealed control</title><style>{CSS}</style><main style='max-width:26rem;margin:6rem auto'>"
-                        "<div class=card><h1>sealed control</h1><form method=post><p><input type=password name=token placeholder='admin token' autofocus style='width:100%'></p>"
-                        "<button>Sign in</button></form><p class=muted>The admin token is printed when the control plane starts, or set via SEALED_CONTROL_ADMIN_TOKEN.</p></div></main>")
+def login_form(bad: int = 0):
+    err = '<div class="flash err">That token is not the admin token.</div>' if bad else ""
+    return HTMLResponse(f"""<!doctype html><html lang=en><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1"><link rel=icon href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23004ac6'/%3E%3Ctext x='16' y='22' font-family='system-ui' font-size='18' font-weight='700' fill='white' text-anchor='middle'%3ES%3C/text%3E%3C/svg%3E"><title>sealed control</title>
+<style>{CSS}</style><script>{JS}</script></head><body><div class=login-wrap><div class=login>
+<div style="display:flex;align-items:center;gap:.6rem;margin-bottom:1rem"><div class=mark>S</div>
+<div class=wordmark style="font-size:17px">sealed <span>control</span></div></div>
+{err}<div class="card pad"><form method=post>
+<div class=field><label for=t>Admin token</label><input id=t type=password name=token autofocus autocomplete=current-password></div>
+<button class="btn primary md" style="margin-top:.75rem;width:100%;justify-content:center">Sign in</button></form>
+<p class=note style="margin:.75rem 0 0">The token is printed when the control plane starts, or set with
+<code>SEALED_CONTROL_ADMIN_TOKEN</code>.</p></div>
+<p class=note style="margin-top:1rem">This console shows fleet metadata only. Document content never leaves a runner.</p>
+</div></div></body></html>""")
 
 
 @r.post("/ui/login")
 def login(token: str = Form(...)):
     if token != core.ADMIN:
-        return RedirectResponse("/ui/login", status_code=303)
+        return RedirectResponse("/ui/login?bad=1", status_code=303)
     resp = RedirectResponse("/ui/overview", status_code=303)
     resp.set_cookie(COOKIE, token, httponly=True, samesite="strict", max_age=86400 * 7)
     return resp
@@ -84,25 +226,64 @@ def logout():
 
 
 # ---------- overview ----------
-@r.get("/ui/overview", response_class=HTMLResponse)
 @r.get("/ui", response_class=HTMLResponse)
+@r.get("/ui/overview", response_class=HTMLResponse)
 def overview(request: Request):
     if (g := gate(request)):
         return g
     runners = core.list_runners()
     with core.db() as c:
-        t = c.execute("SELECT COUNT(*) n, SUM(gate='block') b, SUM(app_ok=0) e FROM audit").fetchone()
-        day = c.execute("SELECT COUNT(*) n FROM audit WHERE ts > ?", (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 86400)),)).fetchone()
-    kpi = f"""<div class=grid>
-      <div class='card kpi'><b>{len(runners)}</b>runners <span class=ok>{sum(x['online'] for x in runners)} online</span></div>
-      <div class='card kpi'><b>{t['n'] or 0}</b>jobs reported</div>
-      <div class='card kpi'><b>{day['n'] or 0}</b>last 24h</div>
-      <div class='card kpi'><b class='{"bad" if t['b'] else ""}'>{t['b'] or 0}</b>blocked by gate</div>
-      <div class='card kpi'><b>{t['e'] or 0}</b>app errors</div></div>"""
-    rows = "".join(f"<tr><td>{'🟢' if x['online'] else '⚪'}</td><td><a href='/ui/runners/{x['id']}'>{esc(x['label'] or x['id'])}</a><br><small>{esc(x['hostname'])}</small></td>"
-                   f"<td>{', '.join(esc(a.get('name')) for a in x['apps'])}</td><td>{'GPU' if x['gpu'] else 'CPU'} · {esc(x['runtime'] or 'runc')}</td><td>{x['jobs']}</td><td>{ago(x['last_seen'])}</td></tr>" for x in runners)
-    return page("Overview", kpi + "<h2>Runners</h2><table><tr><th></th><th>Runner</th><th>Verified apps</th><th>Compute</th><th>Jobs</th><th>Last seen</th></tr>" + (rows or "<tr><td colspan=6 class=muted>No runners yet. Create an enrol token and run the installer.</td></tr>") + "</table>"
-                "<p class=muted>Nothing on this page is document content. Runners report hashes, sizes, image IDs and gate verdicts only.</p>", "overview")
+        tot = c.execute("SELECT COUNT(*) n, SUM(gate='block') b, SUM(app_ok=0) e FROM audit").fetchone()
+        since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 86400))
+        day = c.execute("SELECT COUNT(*) FROM audit WHERE ts > ?", (since,)).fetchone()[0]
+        recent = c.execute("SELECT * FROM audit ORDER BY ts DESC LIMIT 40").fetchall()
+    online = sum(x["online"] for x in runners)
+    apps = sorted({a.get("name") for x in runners for a in x["apps"] if a.get("name")})
+    blocked, errors = tot["b"] or 0, tot["e"] or 0
+    ks = strip([
+        {"label": "Runners", "value": len(runners), "href": "/ui/runners",
+         "chip": f'<span class="pill {"good" if online == len(runners) and runners else "watch"}">{online} online</span>' if runners else ""},
+        {"label": "Verified apps", "value": len(apps), "href": "/ui/runners"},
+        {"label": "Jobs (24h)", "value": day, "href": "/ui/audit",
+         "chip": f'<span class="pill">{tot["n"] or 0} total</span>' if (tot["n"] or 0) != day else ""},
+        {"label": "Blocked by gate", "value": f'<span class="{"bad" if blocked else "dim"}">{blocked}</span>',
+         "href": "/ui/audit?gate_=block"},
+        {"label": "App errors", "value": f'<span class="{"bad" if errors else "dim"}">{errors}</span>',
+         "href": "/ui/audit?gate_=error"},
+    ])
+    rows = "".join(
+        f'<tr onclick="location=\'/ui/runners/{x["id"]}\'">'
+        f'<td style="width:1px"><span class="dot {runner_health(x["last_seen"])}"></span></td>'
+        f'<td class=flex-col><div class=two-line><a href="/ui/runners/{x["id"]}"><b>{esc(x["label"] or x["id"])}</b></a>'
+        f'<small>{esc(x["hostname"] or x["id"])}</small></div></td>'
+        f'<td class="flex-col hide-sm">{app_list(x["apps"])}</td>'
+        f'<td class=hide-xl>{"GPU" if x["gpu"] else "CPU"} · <span class=dim>{esc(x["runtime"] or "runc")}</span></td>'
+        f'<td>{x["jobs"]}</td><td>{stamp(x["last_seen"])}</td></tr>' for x in runners)
+    tbl = table([{"label": ""}, {"label": "Runner"}, {"label": "Verified apps", "cls": "hide-sm"},
+                 {"label": "Compute", "cls": "hide-xl"}, {"label": "Jobs"}, {"label": "Heartbeat"}], rows,
+                empty="No runners enrolled",
+                empty_action='<a class="btn primary" href="/ui/tokens" style="margin-top:.6rem">Create an enrol token</a>')
+    feed = "".join(
+        f'<div style="display:flex;gap:.5rem;align-items:baseline;padding:.4rem 0;border-bottom:1px solid var(--c-border)">'
+        f'{op_badge(a["op"])}<span class="dim tnum" style="font-size:11.5px">{esc(a["input_chars"])}→{esc(a["output_chars"])}</span>'
+        f'<span style="margin-left:auto;display:flex;gap:.4rem;align-items:baseline">'
+        f'{"<span class=\'pill action\'>blocked</span>" if a["gate"] == "block" else "<span class=\'pill action\'>error</span>" if not a["app_ok"] else ""}'
+        f'<span class="stamp">{esc(a["ts"][11:19])}</span></span></div>' for a in recent[:14])
+    rail = (card("Recent jobs", feed or '<p class=dim>No jobs reported yet.</p>',
+                 right='<a class="btn ghost" href="/ui/audit">Open audit</a>')
+            + card("What this console can see",
+                   '<p class=note>Runners report the SHA-256 of each input, its size, the image ID, the policy '
+                   'and the gate verdict. Document text never leaves the machine that processed it: the sandbox '
+                   'has no network and the agent has no access to job content.</p>'
+                   '<p class=note style="margin-top:.5rem">Trusted publishers and policies flow the other way, '
+                   'applied on the next heartbeat.</p>'))
+    body = ks + f'<div class="split wide"><div class=pane><div class=pane-in>{tbl}</div></div>' \
+                f'<div class=pane><div class="pane-in rail">{rail}</div></div></div>'
+    pb = ('<div class=pagebar><h1>Fleet</h1><div class=meta>'
+          f'<span class="pill accent">{online} of {len(runners)} online</span></div>'
+          '<div class=actions><a class="btn secondary" href="/ui/tokens">Enrol a runner</a>'
+          '<a class="btn primary" href="/ui/policies">Edit policies</a></div></div>')
+    return page("Overview", f'<div class="page pinned">{pb}{body}</div>', "overview", [("Fleet", None), ("Overview", None)])
 
 
 # ---------- runners ----------
@@ -110,9 +291,35 @@ def overview(request: Request):
 def runners(request: Request):
     if (g := gate(request)):
         return g
-    rows = "".join(f"<tr><td>{'🟢' if x['online'] else '⚪'}</td><td><a href='/ui/runners/{x['id']}'>{esc(x['label'] or x['id'])}</a><br><small>{x['id']}</small></td><td>{esc(x['hostname'])}</td>"
-                   f"<td>{esc(x['version'])}</td><td>{len(x['apps'])}</td><td>{len([p for p in x['pool'] if p.get('alive')])} warm</td><td>{x['jobs']}</td><td>{ago(x['last_seen'])}</td></tr>" for x in core.list_runners())
-    return page("Runners", "<h1>Runners</h1><table><tr><th></th><th>Runner</th><th>Host</th><th>Version</th><th>Apps</th><th>Pool</th><th>Jobs</th><th>Last seen</th></tr>" + rows + "</table>", "runners")
+    rs = core.list_runners()
+    warm = sum(len([p for p in x["pool"] if p.get("alive")]) for x in rs)
+    ks = strip([
+        {"label": "Runners", "value": len(rs)},
+        {"label": "Online", "value": f'<span class="{"ok" if rs and all(x["online"] for x in rs) else ""}">{sum(x["online"] for x in rs)}</span>'},
+        {"label": "With GPU", "value": sum(bool(x["gpu"]) for x in rs)},
+        {"label": "Warm containers", "value": warm},
+        {"label": "Jobs reported", "value": sum(x["jobs"] for x in rs), "href": "/ui/audit"},
+    ])
+    rows = "".join(
+        f'<tr onclick="location=\'/ui/runners/{x["id"]}\'">'
+        f'<td style="width:1px"><span class="dot {runner_health(x["last_seen"])}"></span></td>'
+        f'<td class=flex-col><div class=two-line><a href="/ui/runners/{x["id"]}"><b>{esc(x["label"] or x["id"])}</b></a>'
+        f'<small>{esc(x["id"])}</small></div></td>'
+        f'<td class="flex-col hide-sm">{esc(x["hostname"])}</td>'
+        f'<td class=hide-xl><span class=dim>{esc(x["version"] or "—")}</span></td>'
+        f'<td>{len(x["apps"])}</td>'
+        f'<td class=hide-xl>{"GPU" if x["gpu"] else "CPU"} · <span class=dim>{esc(x["runtime"] or "runc")}</span></td>'
+        f'<td>{len([p for p in x["pool"] if p.get("alive")])}</td><td>{x["jobs"]}</td>'
+        f'<td>{stamp(x["last_seen"])}</td></tr>' for x in rs)
+    tbl = table([{"label": ""}, {"label": "Runner"}, {"label": "Host", "cls": "hide-sm"},
+                 {"label": "Version", "cls": "hide-xl"}, {"label": "Apps"}, {"label": "Compute", "cls": "hide-xl"},
+                 {"label": "Warm"}, {"label": "Jobs"}, {"label": "Heartbeat"}], rows,
+                empty="No runners enrolled",
+                empty_action='<a class="btn primary" href="/ui/tokens" style="margin-top:.6rem">Create an enrol token</a>')
+    pb = ('<div class=pagebar><h1>Runners</h1><div class=meta><span class=stamp>Heartbeat every 30s</span></div>'
+          '<div class=actions><a class="btn primary" href="/ui/tokens">Enrol a runner</a></div></div>')
+    return page("Runners", f'<div class="page pinned">{pb}{ks}<div class=pane><div class=pane-in>{tbl}</div></div></div>',
+                "runners", [("Fleet", None), ("Runners", None)])
 
 
 @r.get("/ui/runners/{rid}", response_class=HTMLResponse)
@@ -121,25 +328,61 @@ def runner_detail(request: Request, rid: str, flash: str = ""):
         return g
     with core.db() as c:
         x = c.execute("SELECT * FROM runners WHERE id=?", (rid,)).fetchone()
-        aud = c.execute("SELECT * FROM audit WHERE runner=? ORDER BY ts DESC LIMIT 50", (rid,)).fetchall()
+        aud = c.execute("SELECT * FROM audit WHERE runner=? ORDER BY ts DESC LIMIT 200", (rid,)).fetchall()
+        agg = c.execute("SELECT SUM(gate='block') b, SUM(app_ok=0) e FROM audit WHERE runner=?", (rid,)).fetchone()
     if not x:
-        return page("Runner", "<p>unknown runner</p>", "runners")
-    apps = json.loads(x["apps"] or "[]"); pool = json.loads(x["pool"] or "[]"); ov = json.loads(x["overrides"] or "{}")
+        return page("Runner", '<div class=tbl-empty><b>Unknown runner</b>It may have been removed.</div>', "runners")
+    apps = json.loads(x["apps"] or "[]")
+    pool = json.loads(x["pool"] or "[]")
+    ov = json.loads(x["overrides"] or "{}")
     cfg = core.get_config_raw()
-    pol_opts = "".join(f"<option value='{esc(n)}' {'selected' if ov.get('policy_name') == n else ''}>{esc(n)}</option>" for n in cfg.get("policies", {}))
-    body = f"""<h1>{esc(x['label'] or rid)} <small class=muted>{rid}</small></h1>
-<div class=grid><div class=card><b>Host</b><br>{esc(x['hostname'])}<br><small>runner {esc(x['version'])}</small></div>
-<div class=card><b>Compute</b><br>{'GPU' if x['gpu'] else 'CPU'} · {esc(x['runtime'] or 'runc')}</div>
-<div class=card><b>Jobs</b><br>{x['jobs']}</div><div class=card><b>Last seen</b><br>{ago(x['last_seen'])}<br><small>enrolled {time.strftime('%Y-%m-%d', time.gmtime(x['enrolled']))}</small></div></div>
-<h2>Verified apps</h2><table><tr><th>App</th><th>Version</th><th>Operations</th></tr>{"".join(f"<tr><td>{esc(a.get('name'))}</td><td>{esc(a.get('version'))}</td><td>{esc(', '.join(a.get('operations', [])))}</td></tr>" for a in apps) or "<tr><td colspan=3 class=muted>none reported</td></tr>"}</table>
-<h2>Warm pool</h2><table><tr><th>Image</th><th>GPU</th><th>Jobs</th><th>Idle</th></tr>{"".join(f"<tr><td>{esc(p.get('image'))}</td><td>{p.get('gpu')}</td><td>{p.get('jobs')}</td><td>{p.get('idle_s')}s</td></tr>" for p in pool) or "<tr><td colspan=4 class=muted>empty</td></tr>"}</table>
-<h2>Per-runner override</h2><div class=card><form method=post action='/ui/runners/{rid}/override'>
-<p>Confidential policy variant for this runner: <select name=policy_name><option value=''>(fleet default)</option>{pol_opts}</select>
-&nbsp; Runtime: <input type=text name=runtime value='{esc(ov.get('runtime',''))}' placeholder='runsc / kata-runtime / empty = fleet' style='min-width:12rem'> <button>Save</button></p>
-<p class=muted>The selected policy is delivered to this runner under the name <code>confidential</code>. Leave empty to inherit the fleet config.</p></form>
-<form method=post action='/ui/runners/{rid}/delete' class=inline onsubmit="return confirm('Remove this runner? It will need a new enrol token to come back.')"><button class=danger>Remove runner</button></form></div>
-<h2>Recent jobs</h2>{audit_table(aud)}"""
-    return page("Runner", body, "runners", flash)
+    name = x["label"] or rid
+    ks = strip([
+        {"label": "Jobs reported", "value": x["jobs"], "href": f"/ui/audit?runner={rid}"},
+        {"label": "Verified apps", "value": len(apps)},
+        {"label": "Warm containers", "value": len([p for p in pool if p.get("alive")])},
+        {"label": "Blocked", "value": f'<span class="{"bad" if agg["b"] else "dim"}">{agg["b"] or 0}</span>',
+         "href": f"/ui/audit?runner={rid}&gate_=block"},
+        {"label": "App errors", "value": f'<span class="{"bad" if agg["e"] else "dim"}">{agg["e"] or 0}</span>',
+         "href": f"/ui/audit?runner={rid}&gate_=error"},
+    ])
+    pol_opts = "".join(f'<option value="{esc(n)}"{" selected" if ov.get("policy_name") == n else ""}>{esc(n)}</option>'
+                       for n in (cfg.get("policies") or {}))
+    app_rows = "".join(f'<tr><td class=flex-col><div class=two-line><b>{esc(a.get("name"))}</b>'
+                       f'<small>{esc(", ".join(a.get("operations", [])))}</small></div></td>'
+                       f'<td class=dim>{esc(a.get("version"))}</td></tr>' for a in apps)
+    pool_rows = "".join(f'<tr><td class=flex-col><div class=two-line>{esc(p.get("image"))}'
+                        f'<small>{"GPU" if p.get("gpu") else "CPU"} · {esc(p.get("jobs"))} jobs</small></div></td>'
+                        f'<td class=dim>idle {esc(p.get("idle_s"))}s</td></tr>' for p in pool)
+    rail = (
+        card("Identity",
+             f'<dl class=kv><dt>Runner id</dt><dd><code>{esc(rid)}</code></dd>'
+             f'<dt>Host</dt><dd>{esc(x["hostname"] or "—")}</dd>'
+             f'<dt>Runner version</dt><dd>{esc(x["version"] or "—")}</dd>'
+             f'<dt>Compute</dt><dd>{"GPU" if x["gpu"] else "CPU"} · sandbox runtime <code>{esc(x["runtime"] or "runc")}</code></dd>'
+             f'<dt>Enrolled</dt><dd>{time.strftime("%Y-%m-%d", time.gmtime(x["enrolled"]))}</dd>'
+             f'<dt>Heartbeat</dt><dd>{stamp(x["last_seen"])}</dd></dl>')
+        + card("Verified apps", table([{"label": "App"}, {"label": "Version"}], app_rows, empty="No apps reported"))
+        + card("Warm pool", table([{"label": "Image"}, {"label": "Idle"}], pool_rows, empty="No warm containers"))
+        + card("Per-runner override",
+               f'<form method=post action="/ui/runners/{rid}/override">'
+               '<div class=row><div class="field grow"><label>Confidential policy for this runner</label>'
+               f'<select name=policy_name><option value="">Fleet default</option>{pol_opts}</select>'
+               '<span class=hint>Delivered to this runner under the name <code>confidential</code>.</span></div>'
+               '<div class="field grow"><label>Sandbox runtime</label>'
+               f'<input type=text name=runtime value="{esc(ov.get("runtime", ""))}" placeholder="inherit fleet setting">'
+               '<span class=hint><code>runsc</code> or <code>kata-runtime</code> if installed on that host.</span></div>'
+               '</div><button class="btn primary" style="margin-top:.75rem">Save override</button></form>'))
+    left = f'<div class=pane><div class=pane-in>{audit_table(aud, show_runner=False)}</div></div>'
+    right = f'<div class=pane><div class="pane-in rail">{rail}</div></div>'
+    pb = (f'<div class=pagebar><h1>{esc(name)}</h1><div class=meta>'
+          f'<span class="dot {runner_health(x["last_seen"])}"></span>{stamp(x["last_seen"])}</div>'
+          f'<div class=actions><a class="btn secondary" href="/ui/audit?runner={rid}">Audit</a>'
+          f'<form class=inline method=post action="/ui/runners/{rid}/delete" '
+          f'data-confirm="Remove {esc(name)}? It needs a new enrol token to come back."><button class="btn danger">Remove runner</button></form>'
+          '</div></div>')
+    return page(name, f'<div class="page pinned">{pb}{ks}<div class="split wide">{left}{right}</div></div>',
+                "runners", [("Fleet", None), ("Runners", "/ui/runners"), (name, None)], flash)
 
 
 @r.post("/ui/runners/{rid}/override")
@@ -147,7 +390,7 @@ def runner_override(rid: str, policy_name: str = Form(""), runtime: str = Form("
     ov = {k: v for k, v in {"policy_name": policy_name.strip(), "runtime": runtime.strip()}.items() if v}
     with core.db() as c:
         c.execute("UPDATE runners SET overrides=? WHERE id=?", (json.dumps(ov), rid))
-    return RedirectResponse(f"/ui/runners/{rid}?flash=override+saved,+applied+on+next+heartbeat", status_code=303)
+    return RedirectResponse(f"/ui/runners/{rid}?flash=Override+saved.+Applied+on+the+next+heartbeat.", status_code=303)
 
 
 @r.post("/ui/runners/{rid}/delete")
@@ -178,16 +421,39 @@ def policies(request: Request, edit: str = "", flash: str = "", err: int = 0):
     if (g := gate(request)):
         return g
     pol = core.get_config_raw().get("policies", {})
-    rows = "".join(f"<tr><td><a href='/ui/policies?edit={esc(n)}'>{esc(n)}</a></td><td><code>{esc((yaml.safe_load(t) or {}).get('tier',''))}</code></td>"
-                   f"<td>{esc((yaml.safe_load(t) or {}).get('allowed_ops',''))}</td><td>{'yes' if (yaml.safe_load(t) or {}).get('require_verified', True) else '<b class=bad>no</b>'}</td>"
-                   f"<td><form method=post action='/ui/policies/delete' class=inline><input type=hidden name=name value='{esc(n)}'><button class=danger>Delete</button></form></td></tr>" for n, t in pol.items())
+    rows = ""
+    for n, t in pol.items():
+        d = yaml.safe_load(t) or {}
+        ops = d.get("allowed_ops", ["*"])
+        ops_txt = "any operation" if ops == ["*"] else ", ".join(ops)
+        out = (d.get("output") or {}).get("max_chars")
+        sub = f'{d.get("tier", "—")} · {ops_txt}' + (f' · max {out:,} chars' if isinstance(out, int) else "")
+        ver = ('<span class="pill good">verified only</span>' if d.get("require_verified", True)
+               else '<span class="pill action">any image</span>')
+        rows += (f'<tr><td class=flex-col><div class=two-line>'
+                 f'<a href="/ui/policies?edit={q(n)}"><b>{esc(n)}</b></a><small>{esc(sub)}</small></div></td>'
+                 f'<td>{ver}</td>'
+                 f'<td style="text-align:right"><a class="btn ghost" href="/ui/policies?edit={q(n)}">Edit</a>'
+                 f'<form class=inline method=post action="/ui/policies/delete" data-confirm="Delete policy {esc(n)}?">'
+                 f'<input type=hidden name=name value="{esc(n)}"><button class="btn ghost bad">Delete</button></form></td></tr>')
+    tbl = table([{"label": "Policy"}, {"label": "Images"}, {"label": ""}], rows,
+                empty="No fleet policies",
+                empty_action='<p class=note style="justify-content:center">Runners use their local <code>policies/</code> until you publish one here.</p>')
     text = pol.get(edit, DEFAULT_POLICY if not edit else "")
-    body = f"""<h1>Policies</h1><p class=muted>Policies pushed here override the runner's local <code>policies/</code> on the next heartbeat. The gateway loads them by name; clients pick a policy per job.</p>
-<table><tr><th>Name</th><th>Tier</th><th>Allowed ops</th><th>Verified only</th><th></th></tr>{rows or "<tr><td colspan=5 class=muted>No fleet policies yet: runners use their local files.</td></tr>"}</table>
-<h2>{'Edit ' + esc(edit) if edit else 'New policy'}</h2><div class=card><form method=post action='/ui/policies/save'>
-<p>Name: <input type=text name=name value='{esc(edit)}' placeholder='confidential' required></p>
-<textarea name=text>{esc(text)}</textarea><p><button>Validate and save</button></p></form></div>"""
-    return page("Policies", body, "policies", flash, bool(err))
+    editor = card(f"Edit {edit}" if edit else "New policy",
+                  '<form method=post action="/ui/policies/save">'
+                  f'<div class=field><label>Name</label><input type=text name=name value="{esc(edit)}" placeholder="confidential" required></div>'
+                  f'<div class=field style="margin-top:.6rem"><label>YAML</label><textarea name=text spellcheck=false>{esc(text)}</textarea></div>'
+                  '<div style="display:flex;gap:.5rem;margin-top:.75rem;align-items:center">'
+                  '<button class="btn primary">Validate and save</button>'
+                  + ('<a class="btn ghost" href="/ui/policies">New policy</a>' if edit else "")
+                  + '</div><p class=note style="margin-top:.6rem">Saved policies reach every runner on its next heartbeat '
+                    'and take precedence over the files in the runner\'s repo.</p></form>')
+    pb = ('<div class=pagebar><h1>Policies</h1><div class=meta><span class=stamp>Distributed on the next heartbeat</span></div></div>')
+    body = (f'<div class="split inbox"><div class=pane><div class=pane-in>{tbl}</div></div>'
+            f'<div class=pane><div class="pane-in rail">{editor}</div></div></div>')
+    return page("Policies", f'<div class="page pinned">{pb}{body}</div>', "policies",
+                [("Policy", None), ("Policies", None)], flash, bool(err))
 
 
 @r.post("/ui/policies/save")
@@ -199,23 +465,24 @@ def policy_save(name: str = Form(...), text: str = Form(...)):
             assert k in d, f"missing '{k}'"
         assert isinstance(d.get("allowed_ops", ["*"]), list), "allowed_ops must be a list"
         out = d.get("output", {}) or {}
-        assert isinstance(out.get("max_chars", 1), int) and isinstance(out.get("max_verbatim_span_words", 0), int), "output limits must be integers"
+        assert isinstance(out.get("max_chars", 1), int) and isinstance(out.get("max_verbatim_span_words", 0), int), \
+            "output limits must be integers"
     except Exception as e:
-        return RedirectResponse(f"/ui/policies?edit={name}&err=1&flash=invalid+policy:+{urllib.request.quote(str(e))}", status_code=303)
-    cfg = core.get_config_raw()
-    pol = dict(cfg.get("policies", {})); pol[name.strip()] = text
+        return RedirectResponse(f"/ui/policies?edit={q(name)}&err=1&flash=Invalid+policy:+{q(str(e))}", status_code=303)
+    pol = dict(core.get_config_raw().get("policies", {}))
+    pol[name.strip()] = text
     with core.db() as c:
         c.execute("INSERT OR REPLACE INTO config VALUES('policies', ?)", (json.dumps(pol),))
-    return RedirectResponse(f"/ui/policies?edit={name}&flash=saved", status_code=303)
+    return RedirectResponse(f"/ui/policies?edit={q(name)}&flash=Policy+saved", status_code=303)
 
 
 @r.post("/ui/policies/delete")
 def policy_delete(name: str = Form(...)):
-    cfg = core.get_config_raw()
-    pol = dict(cfg.get("policies", {})); pol.pop(name, None)
+    pol = dict(core.get_config_raw().get("policies", {}))
+    pol.pop(name, None)
     with core.db() as c:
         c.execute("INSERT OR REPLACE INTO config VALUES('policies', ?)", (json.dumps(pol),))
-    return RedirectResponse("/ui/policies?flash=deleted", status_code=303)
+    return RedirectResponse("/ui/policies?flash=Policy+deleted", status_code=303)
 
 
 # ---------- trust ----------
@@ -224,45 +491,86 @@ def trust(request: Request, flash: str = ""):
     if (g := gate(request)):
         return g
     keys = core.get_config_raw().get("trusted_keys", {})
-    rows = "".join(f"<tr><td>{esc(l)}</td><td><code>{esc(k)}</code></td><td><form method=post action='/ui/trust/delete' class=inline><input type=hidden name=key value='{esc(k)}'><button class=danger>Remove</button></form></td></tr>" for k, l in keys.items())
-    body = f"""<h1>Trusted publishers</h1><p class=muted>Runners only install registry entries signed by one of these keys. Distributed on the next heartbeat.</p>
-<table><tr><th>Label</th><th>Ed25519 public key</th><th></th></tr>{rows or "<tr><td colspan=3 class=muted>none</td></tr>"}</table>
-<div class=card><form method=post action='/ui/trust/add'><p>Label <input type=text name=label required> &nbsp; Public key <input type=text name=key required style='min-width:28rem'> <button>Trust</button></p></form></div>"""
-    return page("Trust", body, "trust", flash)
+    rows = "".join(
+        f'<tr><td class=flex-col><b>{esc(l)}</b></td><td class="wrap"><code>{esc(k)}</code></td>'
+        f'<td style="text-align:right"><form class=inline method=post action="/ui/trust/delete" '
+        f'data-confirm="Stop trusting {esc(l)}? Runners will refuse new installs signed by this key.">'
+        f'<input type=hidden name=key value="{esc(k)}"><button class="btn ghost bad">Remove</button></form></td></tr>'
+        for k, l in keys.items())
+    tbl = table([{"label": "Publisher"}, {"label": "Ed25519 public key"}, {"label": ""}], rows,
+                empty="No trusted publishers",
+                empty_action='<p class=note style="justify-content:center">Runners refuse every registry entry until a key is trusted.</p>')
+    form = card("Trust a publisher",
+                '<form method=post action="/ui/trust/add"><div class=row>'
+                '<div class="field grow"><label>Label</label><input type=text name=label placeholder="sealed community" required></div>'
+                '<div class="field grow"><label>Public key</label><input type=text name=key placeholder="base64 Ed25519 key" required></div>'
+                '</div><button class="btn primary" style="margin-top:.75rem">Trust publisher</button>'
+                '<p class=note style="margin-top:.6rem">A publisher signs the SOURCE of an app, not an image. Runners '
+                'still build it locally and run the full admission pipeline before it can touch confidential data.</p></form>')
+    pb = '<div class=pagebar><h1>Trusted publishers</h1></div>'
+    body = (f'<div class="split"><div class=pane><div class=pane-in>{tbl}</div></div>'
+            f'<div class=pane><div class="pane-in rail">{form}</div></div></div>')
+    return page("Trust", f'<div class="page pinned">{pb}{body}</div>', "trust", [("Policy", None), ("Trust", None)], flash)
 
 
 @r.post("/ui/trust/add")
 def trust_add(label: str = Form(...), key: str = Form(...)):
-    cfg = core.get_config_raw(); keys = dict(cfg.get("trusted_keys", {})); keys[key.strip()] = label.strip()
+    keys = dict(core.get_config_raw().get("trusted_keys", {}))
+    keys[key.strip()] = label.strip()
     with core.db() as c:
         c.execute("INSERT OR REPLACE INTO config VALUES('trusted_keys', ?)", (json.dumps(keys),))
-    return RedirectResponse("/ui/trust?flash=key+trusted", status_code=303)
+    return RedirectResponse("/ui/trust?flash=Publisher+trusted", status_code=303)
 
 
 @r.post("/ui/trust/delete")
 def trust_delete(key: str = Form(...)):
-    cfg = core.get_config_raw(); keys = dict(cfg.get("trusted_keys", {})); keys.pop(key, None)
+    keys = dict(core.get_config_raw().get("trusted_keys", {}))
+    keys.pop(key, None)
     with core.db() as c:
         c.execute("INSERT OR REPLACE INTO config VALUES('trusted_keys', ?)", (json.dumps(keys),))
-    return RedirectResponse("/ui/trust?flash=key+removed", status_code=303)
+    return RedirectResponse("/ui/trust?flash=Publisher+removed", status_code=303)
 
 
-# ---------- tokens ----------
+# ---------- enrol tokens ----------
 @r.get("/ui/tokens", response_class=HTMLResponse)
 def tokens(request: Request, new: str = "", flash: str = ""):
     if (g := gate(request)):
         return g
     with core.db() as c:
-        rows = c.execute("SELECT * FROM enroll_tokens ORDER BY created DESC").fetchall()
-    tr = "".join(f"<tr><td>{esc(t['label'])}</td><td><code>{esc(t['token'][:12])}…</code></td><td>{time.strftime('%Y-%m-%d %H:%M', time.gmtime(t['created']))}</td>"
-                 f"<td>{('used by <a href=/ui/runners/' + t['used_by'] + '>' + t['used_by'] + '</a>') if t['used_by'] else '<span class=ok>unused</span>'}</td>"
-                 f"<td>{'' if t['used_by'] else '<form method=post action=/ui/tokens/delete class=inline><input type=hidden name=token value=' + esc(t['token']) + '><button class=danger>Revoke</button></form>'}</td></tr>" for t in rows)
-    shown = f"""<div class=card><b>New token (shown once):</b> <code>{esc(new)}</code><p>Install a runner with it:</p>
-<pre>SEALED_CONTROL={esc(core.get_config_raw().get("public_url") or core.PUBLIC_URL)} SEALED_ENROLL_TOKEN={esc(new)} bash -c "$(curl -fsSL https://raw.githubusercontent.com/Andrew1326/sealed/master/deploy/install.sh)"</pre>
-<p class=muted>Or paste <code>deploy/cloud-init.yaml</code> as VM user data with these two values.</p></div>""" if new else ""
-    body = f"""<h1>Enrol tokens</h1>{shown}<div class=card><form method=post action='/ui/tokens/create'><p>Label <input type=text name=label placeholder='office-server' required> <button>Create token</button></p></form></div>
-<table><tr><th>Label</th><th>Token</th><th>Created</th><th>Status</th><th></th></tr>{tr}</table>"""
-    return page("Enrol tokens", body, "tokens", flash)
+        rows_db = c.execute("SELECT * FROM enroll_tokens ORDER BY created DESC").fetchall()
+    rows = ""
+    for t in rows_db:
+        used = (f'<a class=pill href="/ui/runners/{t["used_by"]}">used</a>' if t["used_by"]
+                else '<span class="pill good">unused</span>')
+        act = ("" if t["used_by"] else
+               f'<form class=inline method=post action="/ui/tokens/delete" data-confirm="Revoke this token?">'
+               f'<input type=hidden name=token value="{esc(t["token"])}"><button class="btn ghost bad">Revoke</button></form>')
+        rows += (f'<tr><td class=flex-col><div class=two-line><b>{esc(t["label"] or "—")}</b>'
+                 f'<small><code>{esc(t["token"][:12])}…</code> · created {esc(ago(t["created"]))}</small></div></td>'
+                 f'<td>{used}</td><td>{act}</td></tr>')
+    tbl = table([{"label": "Token"}, {"label": "Status"}, {"label": ""}], rows, empty="No enrol tokens")
+    base = core.get_config_raw().get("public_url") or core.PUBLIC_URL
+    reveal = ""
+    if new:
+        one_liner = (f'SEALED_CONTROL={base} SEALED_ENROLL_TOKEN={new} \\\n'
+                     '  bash -c "$(curl -fsSL https://raw.githubusercontent.com/Andrew1326/sealed/master/deploy/install.sh)"')
+        reveal = card("New token — shown once",
+                      f'<p style="margin:0 0 .5rem"><code style="font-size:13px">{esc(new)}</code></p>'
+                      f'<p class=note style="margin:0 0 .4rem">Run this on the machine that will hold the data:</p>'
+                      f'<pre><code>{esc(one_liner)}</code></pre>'
+                      '<p class=note style="margin-top:.5rem">Or paste <code>deploy/cloud-init.yaml</code> as the VM\'s '
+                      'user data with the same two values. The token works once.</p>',
+                      right='<span class="pill accent">copy it now</span>')
+    form = card("Create an enrol token",
+                '<form method=post action="/ui/tokens/create"><div class=field><label>Label</label>'
+                '<input type=text name=label placeholder="office-server" required>'
+                '<span class=hint>Names the machine in this console.</span></div>'
+                '<button class="btn primary" style="margin-top:.75rem">Create token</button></form>')
+    pb = '<div class=pagebar><h1>Enrol tokens</h1><div class=meta><span class=stamp>Single use</span></div></div>'
+    body = (f'<div class="split"><div class=pane><div class=pane-in>{tbl}</div></div>'
+            f'<div class=pane><div class="pane-in rail">{reveal}{form}</div></div></div>')
+    return page("Enrol tokens", f'<div class="page pinned">{pb}{body}</div>', "tokens",
+                [("Policy", None), ("Enrol tokens", None)], flash)
 
 
 @r.post("/ui/tokens/create")
@@ -275,43 +583,89 @@ def token_create(label: str = Form(...)):
 def token_delete(token: str = Form(...)):
     with core.db() as c:
         c.execute("DELETE FROM enroll_tokens WHERE token=? AND used_by IS NULL", (token,))
-    return RedirectResponse("/ui/tokens?flash=revoked", status_code=303)
+    return RedirectResponse("/ui/tokens?flash=Token+revoked", status_code=303)
 
 
 # ---------- audit ----------
-def audit_table(rows) -> str:
-    tr = "".join(f"<tr><td><small>{esc(a['ts'])}</small></td><td><a href='/ui/runners/{a['runner']}'>{esc(a['runner'])}</a></td><td>{esc(a['client'] if 'client' in a.keys() else '')}</td><td>{esc(a['op'])}</td><td>{esc(a['image'])}</td>"
-                 f"<td>{a['input_chars']} → {a['output_chars']}</td><td>{'<span class=ok>allow</span>' if a['gate'] == 'allow' else '<span class=bad>block: ' + esc(a['gate_reason']) + '</span>'}{'' if a['app_ok'] else ' <span class=bad>(app error)</span>'}</td><td>{a['duration_s']}s</td></tr>" for a in rows)
-    return "<table><tr><th>Time (UTC)</th><th>Runner</th><th>Client</th><th>Op</th><th>Image</th><th>Chars</th><th>Gate</th><th>Took</th></tr>" + (tr or "<tr><td colspan=8 class=muted>nothing yet</td></tr>") + "</table>"
+def audit_table(rows, show_runner: bool = True, toolbar: str = "") -> str:
+    tr = ""
+    for a in rows:
+        wide = (f'<td class=hide-sm><a href="/ui/runners/{a["runner"]}">{esc(a["runner"])}</a></td>'
+                f'<td class=hide-xl>{esc(a["client"] or "—") if "client" in a.keys() else "—"}</td>') if show_runner else ""
+        chars = f'<td class=hide-sm>{esc(a["input_chars"])} → {esc(a["output_chars"])}</td>' if show_runner else ""
+        tr += (f'<tr><td><span class=stamp>{esc(a["ts"][5:10])} {esc(a["ts"][11:19])}</span></td>{wide}'
+               f'<td>{op_badge(a["op"])}</td>'
+               f'<td class=flex-col>{image_cell(a)}</td>{chars}'
+               f'<td>{gate_cell(a)}</td><td>{esc(a["duration_s"])}s</td></tr>')
+    cols = [{"label": "Time (UTC)"}]
+    if show_runner:
+        cols += [{"label": "Runner", "cls": "hide-sm"}, {"label": "Client", "cls": "hide-xl"}]
+    cols += [{"label": "Op"}, {"label": "Image"}]
+    if show_runner:
+        cols.append({"label": "Chars", "cls": "hide-sm"})
+    cols += [{"label": "Gate"}, {"label": "Took"}]
+    return table(cols, tr, toolbar=toolbar, empty="No jobs match this view")
 
 
 @r.get("/ui/audit", response_class=HTMLResponse)
-def audit(request: Request, runner: str = "", op: str = "", gate_: str = "", q: str = "", n: int = 200):
+def audit(request: Request, runner: str = "", op: str = "", gate_: str = "", q_: str = "", q: str = "", n: int = 300):
     if (g := gate(request)):
         return g
+    term = q or q_
     where, args = [], []
     if runner:
-        where.append("runner=?"); args.append(runner)
+        where.append("runner=?")
+        args.append(runner)
     if op:
-        where.append("op=?"); args.append(op)
+        where.append("op=?")
+        args.append(op)
     if gate_ == "block":
         where.append("gate='block'")
     if gate_ == "error":
         where.append("app_ok=0")
-    if q:
-        where.append("(image LIKE ? OR image_id LIKE ? OR input_sha256 LIKE ? OR policy LIKE ?)"); args += [f"%{q}%"] * 4
+    if term:
+        where.append("(image LIKE ? OR image_id LIKE ? OR input_sha256 LIKE ? OR policy LIKE ?)")
+        args += [f"%{term}%"] * 4
     sql = "SELECT * FROM audit" + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY ts DESC LIMIT ?"
     with core.db() as c:
         rows = c.execute(sql, (*args, n)).fetchall()
         ops = [x[0] for x in c.execute("SELECT DISTINCT op FROM audit")]
-        rns = [x[0] for x in c.execute("SELECT DISTINCT runner FROM audit")]
-    f = f"""<div class=card><form method=get>
-Runner <select name=runner><option value=''>all</option>{"".join(f"<option {'selected' if x == runner else ''}>{esc(x)}</option>" for x in rns)}</select>
-&nbsp; Op <select name=op><option value=''>all</option>{"".join(f"<option {'selected' if x == op else ''}>{esc(x)}</option>" for x in ops)}</select>
-&nbsp; Show <select name=gate_><option value=''>everything</option><option value=block {'selected' if gate_ == 'block' else ''}>blocked only</option><option value=error {'selected' if gate_ == 'error' else ''}>app errors only</option></select>
-&nbsp; Search <input type=text name=q value='{esc(q)}' placeholder='image, image id, input hash, policy'> <button>Filter</button>
-&nbsp; <a href='/v1/admin/audit?n=5000' class=muted>JSON export</a></form></div>"""
-    return page("Audit", "<h1>Audit</h1>" + f + audit_table(rows), "audit")
+        rns = [dict(x) for x in c.execute("SELECT DISTINCT runner FROM audit")]
+        tot = c.execute("SELECT COUNT(*) n, SUM(gate='block') b, SUM(app_ok=0) e, SUM(input_chars) ic FROM audit").fetchone()
+    ks = strip([
+        {"label": "Jobs reported", "value": tot["n"] or 0, "href": "/ui/audit", "on": not (gate_ or runner or op or term)},
+        {"label": "Allowed", "value": f'<span class=ok>{(tot["n"] or 0) - (tot["b"] or 0) - (tot["e"] or 0)}</span>'},
+        {"label": "Blocked by gate", "value": f'<span class="{"bad" if tot["b"] else "dim"}">{tot["b"] or 0}</span>',
+         "href": "/ui/audit?gate_=block", "on": gate_ == "block"},
+        {"label": "App errors", "value": f'<span class="{"bad" if tot["e"] else "dim"}">{tot["e"] or 0}</span>',
+         "href": "/ui/audit?gate_=error", "on": gate_ == "error"},
+        {"label": "Characters processed", "value": f'{(tot["ic"] or 0):,}'},
+    ])
+    sel_r = "".join(f'<option value="{esc(x["runner"])}"{" selected" if x["runner"] == runner else ""}>{esc(x["runner"])}</option>' for x in rns)
+    sel_o = "".join(f'<option{" selected" if x == op else ""}>{esc(x)}</option>' for x in ops)
+    toolbar = (f'<form method=get style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;width:100%">'
+               f'<input type=text name=q value="{esc(term)}" placeholder="Search image, image id, input hash, policy">'
+               f'<select name=runner><option value="">All runners</option>{sel_r}</select>'
+               f'<select name=op><option value="">All operations</option>{sel_o}</select>'
+               f'<select name=gate_><option value="">Everything</option>'
+               f'<option value=block{" selected" if gate_ == "block" else ""}>Blocked only</option>'
+               f'<option value=error{" selected" if gate_ == "error" else ""}>App errors only</option></select>'
+               f'<button class="btn secondary">Filter</button>'
+               f'<a class="btn ghost" href="/ui/audit">Clear</a>'
+               f'<a class="btn ghost" style="margin-left:auto" href="/v1/admin/audit?n=5000">JSON export</a></form>')
+    filt = []
+    if runner:
+        filt.append(f'<span class="pill accent">runner {esc(runner)}</span>')
+    if op:
+        filt.append(f'<span class="pill accent">op {esc(op)}</span>')
+    if gate_:
+        filt.append(f'<span class="pill accent">{esc(gate_)} only</span>')
+    if term:
+        filt.append(f'<span class="pill accent">“{esc(term)}”</span>')
+    pb = ('<div class=pagebar><h1>Audit</h1><div class=meta>' + "".join(filt) +
+          f'<span class=stamp>{len(rows)} shown</span></div></div>')
+    body = f'<div class=pane><div class=pane-in>{audit_table(rows, toolbar=toolbar)}</div></div>'
+    return page("Audit", f'<div class="page pinned">{pb}{ks}{body}</div>', "audit", [("Activity", None), ("Audit", None)])
 
 
 # ---------- alerts ----------
@@ -321,19 +675,37 @@ def alerts(request: Request, flash: str = ""):
         return g
     cfg = core.get_config_raw()
     with core.db() as c:
-        rows = c.execute("SELECT * FROM audit WHERE gate='block' OR app_ok=0 ORDER BY ts DESC LIMIT 100").fetchall()
-    body = f"""<h1>Alerts</h1><div class=card><form method=post action='/ui/alerts/save'>
-<p>Webhook URL <input type=url name=webhook value='{esc(cfg.get('webhook',''))}' placeholder='https://hooks.slack.com/... or any endpoint accepting JSON POST' style='min-width:30rem'> <button>Save</button></p>
-<p class=muted>Every blocked output and every app error reported by a runner is POSTed as JSON (metadata only). Leave empty to disable.</p></form></div>
-<h2>Blocked outputs and app errors</h2>{audit_table(rows)}"""
-    return page("Alerts", body, "alerts", flash)
+        rows = c.execute("SELECT * FROM audit WHERE gate='block' OR app_ok=0 ORDER BY ts DESC LIMIT 200").fetchall()
+        tot = c.execute("SELECT SUM(gate='block') b, SUM(app_ok=0) e FROM audit").fetchone()
+    hook = cfg.get("webhook", "")
+    ks = strip([
+        {"label": "Blocked by gate", "value": f'<span class="{"bad" if tot["b"] else "dim"}">{tot["b"] or 0}</span>'},
+        {"label": "App errors", "value": f'<span class="{"bad" if tot["e"] else "dim"}">{tot["e"] or 0}</span>'},
+        {"label": "Webhook", "value": '<span class="pill good">on</span>' if hook else '<span class="pill">off</span>'},
+    ])
+    form = card("Webhook",
+                '<form method=post action="/ui/alerts/save"><div class=field><label>Endpoint</label>'
+                f'<input type=url name=webhook value="{esc(hook)}" placeholder="https://hooks.slack.com/services/…">'
+                '<span class=hint>Every blocked output and app error is POSTed as JSON. Metadata only. Empty disables it.</span>'
+                '</div><button class="btn primary" style="margin-top:.75rem">Save</button></form>')
+    pb = ('<div class=pagebar><h1>Alerts</h1><div class=meta><span class=stamp>Blocked outputs and app errors</span>'
+          '</div></div>')
+    body = (f'<div class="split wide"><div class=pane><div class=pane-in>{audit_table(rows)}</div></div>'
+            f'<div class=pane><div class="pane-in rail">{form}'
+            + card("What triggers an alert",
+                   '<p class=note>The output gate blocked a result, or an app failed. A blocked output means a '
+                   'verified app tried to return something the policy forbids: too large, unexpected fields, or too '
+                   'much of the input copied out verbatim.</p>') +
+            '</div></div></div>')
+    return page("Alerts", f'<div class="page pinned">{pb}{ks}{body}</div>', "alerts",
+                [("Activity", None), ("Alerts", None)], flash)
 
 
 @r.post("/ui/alerts/save")
 def alerts_save(webhook: str = Form("")):
     with core.db() as c:
         c.execute("INSERT OR REPLACE INTO config VALUES('webhook', ?)", (json.dumps(webhook.strip()),))
-    return RedirectResponse("/ui/alerts?flash=saved", status_code=303)
+    return RedirectResponse("/ui/alerts?flash=Webhook+saved", status_code=303)
 
 
 # ---------- settings ----------
@@ -342,13 +714,34 @@ def settings(request: Request, flash: str = ""):
     if (g := gate(request)):
         return g
     cfg = core.get_config_raw()
-    body = f"""<h1>Settings</h1><div class=card><form method=post action='/ui/settings/save'>
-<p>Registry URL <input type=text name=registry value='{esc(cfg.get('registry',''))}' placeholder='https://raw.githubusercontent.com/Andrew1326/sealed/master/registry' style='min-width:30rem'></p>
-<p>Sandbox runtime <input type=text name=runtime value='{esc(cfg.get('runtime',''))}' placeholder='runc (default) / runsc / kata-runtime'></p>
-<p>Public URL of this control plane <input type=text name=public_url value='{esc(cfg.get('public_url',''))}' placeholder='https://control.example.com' style='min-width:30rem'> <small class=muted>used in the install one-liner</small></p>
-<p><button>Save</button></p></form></div>
-<div class=card><b>API</b><p class=muted>Everything on these pages is also available under <code>/v1/admin/*</code> with <code>Authorization: Bearer &lt;admin token&gt;</code>. The runner API is <code>/v1/enroll</code> and <code>/v1/runners/&lt;id&gt;/heartbeat</code>.</p></div>"""
-    return page("Settings", body, "settings", flash)
+    fleet = card("Fleet defaults",
+                 '<form method=post action="/ui/settings/save">'
+                 '<div class=field><label>Registry</label>'
+                 f'<input type=text name=registry value="{esc(cfg.get("registry", ""))}" '
+                 'placeholder="https://raw.githubusercontent.com/Andrew1326/sealed/master/registry">'
+                 '<span class=hint>Where runners look for signed app sources.</span></div>'
+                 '<div class=field style="margin-top:.6rem"><label>Sandbox runtime</label>'
+                 f'<input type=text name=runtime value="{esc(cfg.get("runtime", ""))}" placeholder="runc (default) · runsc · kata-runtime">'
+                 '<span class=hint>gVisor or Kata put a user-space kernel between an app and the host. Runners fall '
+                 'back to runc and say so if it is not installed.</span></div>'
+                 '<div class=field style="margin-top:.6rem"><label>Public URL of this control plane</label>'
+                 f'<input type=text name=public_url value="{esc(cfg.get("public_url", ""))}" placeholder="https://control.example.com">'
+                 '<span class=hint>Used in the enrol one-liner.</span></div>'
+                 '<button class="btn primary" style="margin-top:.75rem">Save settings</button></form>')
+    api = card("API",
+               '<p class=note>Everything in this console is also available as JSON under <code>/v1/admin/*</code> with '
+               '<code>Authorization: Bearer &lt;admin token&gt;</code>. Runners use <code>/v1/enroll</code> and '
+               '<code>/v1/runners/&lt;id&gt;/heartbeat</code>.</p>'
+               '<p class=note style="margin-top:.5rem">The admin token is set with <code>SEALED_CONTROL_ADMIN_TOKEN</code> '
+               'and printed at startup when unset.</p>')
+    boundary = card("Data boundary",
+                    '<p class=note>This service stores runner registrations, the policies and trusted keys you publish, '
+                    'and job metadata: timestamps, operations, image IDs, input hashes and sizes, gate verdicts. It has '
+                    'no route to document content, and runners have no code path that would send it.</p>')
+    pb = '<div class=pagebar><h1>Settings</h1></div>'
+    body = (f'<div class="split"><div class=pane><div class="pane-in rail">{fleet}</div></div>'
+            f'<div class=pane><div class="pane-in rail">{api}{boundary}</div></div></div>')
+    return page("Settings", f'<div class="page pinned">{pb}{body}</div>', "settings", [("Settings", None)], flash)
 
 
 @r.post("/ui/settings/save")
@@ -356,4 +749,4 @@ def settings_save(registry: str = Form(""), runtime: str = Form(""), public_url:
     with core.db() as c:
         for k, v in (("registry", registry), ("runtime", runtime), ("public_url", public_url)):
             c.execute("INSERT OR REPLACE INTO config VALUES(?, ?)", (k, json.dumps(v.strip())))
-    return RedirectResponse("/ui/settings?flash=saved", status_code=303)
+    return RedirectResponse("/ui/settings?flash=Settings+saved", status_code=303)

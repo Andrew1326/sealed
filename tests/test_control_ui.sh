@@ -50,3 +50,23 @@ curl -s -b $J $C/ui/runners/$RID | grep -q "Per-runner override" && echo "  PASS
 curl -s -b $J "$C/ui/audit?gate_=block" | grep -q "consecutive input words" && echo "  PASS audit filter shows the blocked job"
 curl -s -b $J "$C/ui/audit?op=translate" | grep -q "consecutive input words" && echo "  FAIL filter" || echo "  PASS op filter excludes it"
 curl -s -b $J "$C/ui/alerts" | grep -q "app-a" && echo "  PASS alerts page shows client label"
+echo "== responsive invariant: no horizontal page scroll on any console page"
+python3 - "$C" "$T" <<'PY'
+import re, sys, urllib.request, http.cookiejar
+base, tmp = sys.argv[1], sys.argv[2]
+jar = http.cookiejar.MozillaCookieJar()
+op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+op.open(urllib.request.Request(base + "/ui/login", data=b"token=adm_ui",
+                               headers={"content-type": "application/x-www-form-urlencoded"}))
+pages = ["/ui/overview", "/ui/runners", "/ui/policies", "/ui/trust", "/ui/tokens", "/ui/audit", "/ui/alerts", "/ui/settings"]
+bad = []
+for p in pages:
+    html = op.open(base + p).read().decode()
+    # every shrinkable container must declare min-width:0, else a wide table pushes the page sideways
+    if "min-width:0" not in html:
+        bad.append(p + ": missing min-width:0 rule")
+    if 'name=viewport' not in html:
+        bad.append(p + ": missing viewport meta")
+print("  PASS responsive rules present on all pages" if not bad else "  FAIL " + "; ".join(bad))
+sys.exit(1 if bad else 0)
+PY

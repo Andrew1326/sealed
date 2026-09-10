@@ -24,12 +24,14 @@ curl -sf -X PUT $C/v1/admin/config -H "$H" -H 'content-type: application/json' -
 $S agent --once | python3 -c "import json,sys;d=json.load(sys.stdin);print('  changed:',d['changed'])"
 grep -q "allowed_ops: \[translate, convert\]" $T/policies/confidential.yaml && echo "  PASS policy applied"
 grep -q "sealed-community" $T/trusted_keys.json && echo "  PASS trusted key applied"
+echo "== console: sign in with the admin token and see the runner"
+J=$T/cookies
+curl -sf -c $J -o /dev/null -X POST $C/ui/login -d token=adm_test
+curl -sf -b $J $C/ui/overview | grep -q "office-server" && echo "  PASS console lists the runner"
+curl -s -o /dev/null -w "%{redirect_url}" $C/ui/overview | grep -q login && echo "  PASS no cookie sees nothing"
 echo "== admin sees the runner and its audit"
 curl -sf $C/v1/admin/runners -H "$H" | python3 -c "import json,sys;r=json.load(sys.stdin)[0];print('  runner',r['label'],r['hostname'],'online' if r['online'] else 'offline','apps:',len(r['apps']),'jobs:',r['jobs'])"
 curl -sf "$C/v1/admin/audit?n=3" -H "$H" | python3 -c "import json,sys;a=json.load(sys.stdin);print('  audit rows:',len(a),'| first:',{k:a[0][k] for k in ('op','image','gate','input_chars')} if a else '-')"
-echo "== dashboard"
-curl -sf "$C/?token=adm_test" | grep -q "office-server" && echo "  PASS dashboard lists the runner"
-curl -sf "$C/?token=wrong" | grep -q "office-server" && echo "  FAIL leaks" || echo "  PASS wrong token sees nothing"
 echo "== nothing but metadata crossed: no document text in the control DB"
 python3 - $T/control.sqlite <<'PY'
 import sqlite3,sys

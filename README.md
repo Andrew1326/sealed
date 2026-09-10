@@ -132,6 +132,13 @@ outputs and app errors, and settings. Everything is also available as JSON under
 
 ![control panel](docs/img/panel-overview.png)
 
+Dense operator console, light and dark, no page scroll at any width. The design system is adapted from the
+"Local SEO Console" variant in [agent-kit](https://github.com/Andrew1326/agent-kit): hairline separation,
+whisper elevation, one PageBar + StatStrip + object + rail grammar, viewport-pinned panes, and a single
+four-level health language (online / late / offline, allow / blocked, ok / error).
+
+![audit](docs/img/panel-audit.png)
+
 Policies and trusted keys pushed from the control plane are applied by the agent on the next heartbeat and take
 precedence over the repo's `policies/`.
 
