@@ -1,0 +1,37 @@
+# Roadmap
+
+Working order. Engineering first, launch material when media is ready. Updated as items land.
+
+## Done (v0.1.0)
+- [x] Sandbox contract, gate, audit, verify pipeline with strace intent detection
+- [x] Warm pool, GPU passthrough, Qwen3 quality tier
+- [x] Documents: docx/txt/md in and out, pdf to text
+- [x] Signed source registry, build-locally install, trust store
+- [x] Non-AI apps (docx2pdf)
+- [x] Gateway + launcher privilege separation, gVisor via SEALED_RUNTIME
+- [x] Control plane API, runner agent, read-only dashboard
+- [x] One-line installer, cloud-init, public repo, release
+
+## Engineering, in order
+1. [ ] **Gateway authentication**: per-client API keys, client label in audit, refuse to bind non-localhost without keys
+2. [ ] **Control panel UI**: login, runners with detail, policy editor with YAML validation, trusted keys, enrol tokens, registry/runtime settings, per-runner policy overrides, audit browser with filters, blocked-output alerts with webhook
+3. [ ] **TLS**: built-in cert support for control plane and gateway, documented reverse-proxy alternative
+4. [ ] **Pseudonymization pass** for the `standard` tier (names, numbers, identifiers swapped locally and restored)
+5. [ ] **PDF with layout**: pdf -> docx via LibreOffice, translate, -> pdf
+6. [ ] **CUDA variants** of translate-marian and extract-qwen in the registry
+7. [ ] **More catalog apps** driven by customer conversations: OCR, PII redaction, speech-to-text, spreadsheets
+8. [ ] **Cloud automation**: control plane creates the runner VM through a provider API (Hetzner first)
+9. [ ] **Installer test** on a throwaway VM (needs a provider token)
+
+## Launch material (needs AI-generated media, later)
+- [ ] Landing page: one-liner, evil-image demo, threat model in plain words, contact
+- [ ] Two-minute demo recording
+- [ ] Show HN, r/selfhosted, local-AI communities
+
+## Validation, in parallel with everything
+- [ ] Route own confidential work through it for a week, log friction
+- [ ] Five conversations with translation agencies, law firms, accounting firms
+
+## Deferred by design
+- Attested (TEE) cloud tier: only once paying customers ask for it
+- Own hosted compute: never without attestation
