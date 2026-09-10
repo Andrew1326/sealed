@@ -142,6 +142,34 @@ four-level health language (online / late / offline, allow / blocked, ok / error
 Policies and trusted keys pushed from the control plane are applied by the agent on the next heartbeat and take
 precedence over the repo's `policies/`.
 
+## Remote providers and pseudonymization (the `standard` tier)
+
+Some work is not confidential and a hosted model is simply better or cheaper. The gateway can call any
+OpenAI-compatible endpoint (OpenAI, Gemini's OpenAI API, Mistral, Groq, a remote Ollama) under a policy that
+has `allow_remote: true`. No confidential policy can have that flag; the loader refuses it.
+
+```yaml
+# ~/.sealed/remotes.yaml
+gemini:
+  base_url: https://generativelanguage.googleapis.com/v1beta/openai
+  model: gemini-2.5-flash
+  api_key_env: GEMINI_API_KEY
+```
+
+```bash
+sealed mask --file memo.txt                                   # dry run: what would leave the machine
+echo "..." | sealed run gemini --op translate --policy policies/standard.yaml -p source=en -p target=de
+```
+
+With `pseudonymize: true` the gateway swaps identifiers for placeholders before the call and restores them in
+the result. Deterministic, local, no model: emails, URLs, IBANs, card numbers, phone numbers, dates, money,
+capitalised name sequences, and your own `pseudonymize_terms` list (company and product names). The remote sees
+`[[NAME_1]] at [[EMAIL_1]] agreed with [[TERM_2]] to pay [[MONEY_1]]`. The audit line records the job as
+remote with per-kind mask counts.
+
+This is a **reduction, not a guarantee**. Free-text facts still leave. Anything that must not leave belongs on
+the confidential tier, where nothing can.
+
 ## TLS
 
 Both services refuse to bind a non-localhost address without a certificate. Two ways to get one:

@@ -71,7 +71,7 @@ def check(policy: Policy, op: str, input_value: Any, output: Any) -> GateVerdict
 
 
 def audit(policy: Policy, image: str, image_id: str, op: str, input_value: Any, output: Any,
-          verdict: GateVerdict, duration: float, ok: bool, client: str = "cli") -> None:
+          verdict: GateVerdict, duration: float, ok: bool, client: str = "cli", extra: Optional[dict] = None) -> None:
     if not policy.audit:
         return
     raw_in = input_value if isinstance(input_value, str) else json.dumps(input_value, ensure_ascii=False)
@@ -84,6 +84,7 @@ def audit(policy: Policy, image: str, image_id: str, op: str, input_value: Any, 
         "output_chars": len(raw_out or ""), "app_ok": ok,
         "gate": "allow" if verdict.allowed else "block", "gate_reason": verdict.reason,
         "duration_s": round(duration, 2),
+        **(extra or {}),
     }
     with AUDIT.open("a") as f:
         f.write(json.dumps(line) + "\n")

@@ -24,6 +24,8 @@ LAUNCHER = os.environ.get("SEALED_LAUNCHER", "").rstrip("/")   # e.g. http://lau
 
 
 def execute(image: str, iid: str, entry: dict, op: str, input_value, params, policy: Policy, gpu: bool) -> RunResult:
+    if entry and entry.get("remote"):
+        return execute_remote(entry["remote"], op, input_value, params, policy)
     if not LAUNCHER:
         return run_job(image, op, input_value, params, memory=policy.memory, gpu=gpu, timeout=policy.timeout_seconds, warm=policy.warm)
     body = _json.dumps({"image_id": iid, "op": op, "input": input_value, "params": params or {}, "memory": policy.memory,
@@ -38,6 +40,8 @@ def execute(image: str, iid: str, entry: dict, op: str, input_value, params, pol
         raise HTTPException(503, f"launcher unreachable: {e}")
     return RunResult(ok=d["ok"], output=d.get("output"), error=d.get("error"), stderr=d.get("stderr", ""), duration=d.get("duration", 0))
 from .pool import POOL
+from . import remote as remote_mod
+from . import pseudo
 from .documents import process_file, whole_text
 
 from .paths import HOME as _HOME
@@ -86,6 +90,29 @@ def health():
     return {"ok": True, "auth": "api-key" if auth.load() else "localhost-dev"}
 
 
+def _remote_extra(entry: dict, res: RunResult) -> dict:
+    if not (entry and entry.get("remote")):
+        return {}
+    try:
+        return {"remote": True, "masked": _json.loads(res.stderr).get("masked", {})}
+    except Exception:
+        return {"remote": True}
+
+
+def execute_remote(rem: dict, op: str, input_value, params, policy: Policy) -> RunResult:
+    """Mask -> remote call -> unmask. The mapping never leaves this process."""
+    text = input_value if isinstance(input_value, str) else _json.dumps(input_value, ensure_ascii=False)
+    if policy.pseudonymize:
+        masked, mp = pseudo.mask(text, policy.pseudonymize_terms, policy.pseudonymize_names)
+    else:
+        masked, mp = text, None
+    res = remote_mod.call(rem, op, masked, params, timeout=policy.timeout_seconds)
+    if res.ok and mp:
+        res.output = pseudo.unmask_value(res.output, mp)
+    res.stderr = _json.dumps({"remote": rem["name"], "masked": mp.summary() if mp else {}})
+    return res
+
+
 @app.get("/v1/apps")
 def apps(c: dict = Depends(client)):
     return registry.load()
@@ -115,6 +142,11 @@ def pool_status(c: dict = Depends(client)):
 def _resolve(policy: Policy, app_name: str, op: str):
     if not policy.allows(op):
         raise HTTPException(403, f"operation '{op}' not allowed by policy '{policy.name}'")
+    rem = remote_mod.get(app_name)
+    if rem:
+        if not policy.allow_remote or policy.tier == "confidential":
+            raise HTTPException(403, f"'{app_name}' is a remote provider; policy '{policy.name}' ({policy.tier}) does not allow data to leave the sandbox")
+        return f"remote:{app_name}", "remote", False, {"remote": rem, "input": "text/plain", "output": "text/plain"}
     hit = registry.find_by_name(app_name)
     if hit:
         iid, entry = hit
@@ -144,7 +176,8 @@ async def submit_file(file: UploadFile = File(...), app_name: str = Form(..., al
         res = execute(image, iid, entry, op, text, prm, policy, gpu)
         verdict = check(policy, op, text, res.output) if res.ok else None
         audit(policy, image, iid, op, text, res.output if res.ok else None,
-              verdict or type("V", (), {"allowed": False, "reason": res.error})(), res.duration, res.ok, client=c["label"])
+              verdict or type("V", (), {"allowed": False, "reason": res.error})(), res.duration, res.ok, client=c["label"],
+              extra=_remote_extra(entry, res))
         if not res.ok:
             raise HTTPException(502, {"error": res.error, "stderr_tail": res.stderr[-500:]})
         if not verdict.allowed:
@@ -177,7 +210,8 @@ def submit(job: Job, c: dict = Depends(client)):
     res = execute(image, iid, entry, job.op, job.input, job.params, policy, gpu)
     verdict = check(policy, job.op, job.input, res.output) if res.ok else None
     audit(policy, image, iid, job.op, job.input, res.output if res.ok else None,
-          verdict or type("V", (), {"allowed": False, "reason": res.error})(), res.duration, res.ok, client=c["label"])
+          verdict or type("V", (), {"allowed": False, "reason": res.error})(), res.duration, res.ok, client=c["label"],
+          extra=_remote_extra(entry, res))
     if not res.ok:
         raise HTTPException(502, {"error": res.error, "stderr_tail": res.stderr[-500:]})
     if not verdict.allowed:

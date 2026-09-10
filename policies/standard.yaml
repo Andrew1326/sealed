@@ -8,6 +8,12 @@ timeout_seconds: 600
 audit: true
 warm: true
 chunk_chars: 6000
+# Remote providers (configured in ~/.sealed/remotes.yaml) are allowed here and only here.
+# Identifiers are swapped for placeholders before the call and restored after: a reduction, not a guarantee.
+allow_remote: true
+pseudonymize: true
+pseudonymize_names: true
+pseudonymize_terms: []
 output:
   max_chars: 2000000
   max_verbatim_span_words: 0

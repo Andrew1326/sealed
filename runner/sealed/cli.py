@@ -49,6 +49,27 @@ def run(app, op, policy_path, param, file_, out_, gpu, cold, unverified):
     """Run one job: sealed run translate-marian --op translate -p source=en -p target=de --file contract.docx --out contract.de.docx"""
     pol = Policy.load(policy_path) if policy_path else Policy.load(Path(__file__).resolve().parents[2] / "policies" / "confidential.yaml")
     params = dict(kv.split("=", 1) for kv in param)
+    from . import remote as remote_mod, pseudo
+    rem = remote_mod.get(app)
+    if rem:
+        if not pol.allow_remote or pol.tier == "confidential":
+            click.echo(f"'{app}' is a remote provider; policy '{pol.name}' ({pol.tier}) does not allow data to leave the sandbox", err=True)
+            sys.exit(2)
+        text = Path(file_).read_text() if file_ else sys.stdin.read()
+        masked, mp = (pseudo.mask(text, pol.pseudonymize_terms, pol.pseudonymize_names) if pol.pseudonymize else (text, None))
+        res = remote_mod.call(rem, op, masked, params, timeout=pol.timeout_seconds)
+        if res.ok and mp:
+            res.output = pseudo.unmask_value(res.output, mp)
+        v = check(pol, op, text, res.output) if res.ok else type("V", (), {"allowed": False, "reason": res.error})()
+        audit(pol, f"remote:{app}", "remote", op, text, res.output if res.ok else None, v, res.duration, res.ok,
+              extra={"remote": True, "masked": mp.summary() if mp else {}})
+        if not res.ok:
+            click.echo(f"remote error: {res.error}", err=True)
+            sys.exit(1)
+        if mp:
+            click.echo("masked before sending: " + ", ".join(f"{k} x{n}" for k, n in mp.summary().items()), err=True)
+        click.echo(res.output if isinstance(res.output, str) else json.dumps(res.output, ensure_ascii=False, indent=2))
+        return
     hit = registry.find_by_name(app)
     entry = None
     if hit:
@@ -382,3 +403,17 @@ def cert(hosts, out):
     from . import certs
     c, k, fp = certs.write(Path(out), list(hosts), "gateway")
     click.echo(f"cert {c}\nkey  {k}\nfingerprint {fp}\nstart with: sealed serve --host 0.0.0.0 --cert {c} --key {k}")
+
+
+@main.command()
+@click.argument("text", required=False)
+@click.option("--file", "file_", type=click.Path(exists=True))
+@click.option("--policy", "policy_path", default=None)
+def mask(text, file_, policy_path):
+    """Show what the pseudonymizer would send to a remote provider (dry run, nothing leaves)."""
+    from . import pseudo
+    pol = Policy.load(policy_path) if policy_path else Policy.load(Path(__file__).resolve().parents[2] / "policies" / "standard.yaml")
+    src = Path(file_).read_text() if file_ else (text or sys.stdin.read())
+    masked, mp = pseudo.mask(src, pol.pseudonymize_terms, pol.pseudonymize_names)
+    click.echo(masked)
+    click.echo("--- masked: " + (", ".join(f"{k} x{n}" for k, n in mp.summary().items()) or "nothing"), err=True)
