@@ -197,6 +197,18 @@ control.example.com {
 A pinned runner accepts only the exact certificate it enrolled with. Rotate the certificate and runners must be
 re-enrolled, which is the intended trade: no silent substitution.
 
+## Editions
+
+Everything in this repository is Apache-2.0 and is the **community edition**: the runner, the apps, the registry,
+and the control plane with its console. It is complete for a single team.
+
+The control plane has an extension hook (entry point group `sealed_control.extensions`, or
+`SEALED_CONTROL_EXTENSIONS=module:register`) through which a separate package can add pages, navigation, API
+routes, and an edition name without forking. The **enterprise edition** is such a package, licensed per
+organisation: organisations and roles, SSO, cloud automation that creates runner VMs in your own cloud account,
+long audit retention with SIEM export, alerting integrations, and support. A hosted control plane is available
+for teams that would rather not run one. Runners always stay with you, whichever edition you use.
+
 ## Measured on this machine (RTX 5080, 32 cores)
 
 | Job | Cold | Warm |

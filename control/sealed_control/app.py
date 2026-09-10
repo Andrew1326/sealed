@@ -240,6 +240,59 @@ def dashboard(request: Request):
 from . import ui as _ui  # noqa: E402
 app.include_router(_ui.r)
 
+# ---------- extensions ----------
+# Packages can extend the control plane without forking it. Two ways to register:
+#   1. an entry point in group "sealed_control.extensions" pointing at a `register(ctx)` callable
+#   2. SEALED_CONTROL_EXTENSIONS="pkg.module:register,other:register"
+# `ctx` exposes: app (FastAPI), ui (nav registration, page renderer, auth check), db, config, admin token.
+EDITION = {"name": "community", "features": []}
+
+
+class ExtensionContext:
+    app = app
+    ui = _ui
+    db = staticmethod(db)
+    get_config = staticmethod(get_config_raw)
+    admin_token = ADMIN
+    edition = EDITION
+
+    @staticmethod
+    def add_nav(section: str, key: str, label: str, href: str, icon_svg: str = "") -> None:
+        _ui.add_nav(section, key, label, href, icon_svg)
+
+    @staticmethod
+    def set_edition(name: str, features: list) -> None:
+        EDITION["name"], EDITION["features"] = name, list(features)
+
+
+def load_extensions() -> list:
+    loaded = []
+    specs = [x.strip() for x in os.environ.get("SEALED_CONTROL_EXTENSIONS", "").split(",") if x.strip()]
+    try:
+        from importlib.metadata import entry_points
+        for ep in entry_points(group="sealed_control.extensions"):
+            specs.append(f"{ep.value}")
+    except Exception:
+        pass
+    import importlib
+    for spec in specs:
+        mod, _, func = spec.partition(":")
+        try:
+            fn = getattr(importlib.import_module(mod), func or "register")
+            fn(ExtensionContext)
+            loaded.append(spec)
+        except Exception as e:
+            print(f"extension {spec} failed to load: {e}")
+    return loaded
+
+
+EXTENSIONS = load_extensions()
+
+
+@app.get("/v1/edition")
+def edition():
+    return {**EDITION, "extensions": EXTENSIONS}
+
 
 def main():
     import sys

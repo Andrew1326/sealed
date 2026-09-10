@@ -29,6 +29,16 @@ NAV = [
 ]
 
 
+EXTRA_NAV: list = []      # (section, key, label, href, icon_svg) added by extensions
+EXTRA_ICONS: dict = {}
+
+
+def add_nav(section: str, key: str, label: str, href: str, icon_svg: str = "") -> None:
+    EXTRA_NAV.append((section, key, label, href))
+    if icon_svg:
+        EXTRA_ICONS[key] = icon_svg
+
+
 def esc(x) -> str:
     return html.escape(str(x if x is not None else ""))
 
@@ -119,10 +129,18 @@ def nav_counts() -> dict:
 def page(title: str, body: str, active: str = "", crumbs: Optional[list] = None,
          flash: str = "", err: bool = False) -> HTMLResponse:
     counts = nav_counts()
+    nav = [(label, list(items)) for label, items in NAV]
+    for section, key, label, href in EXTRA_NAV:
+        for sl, items in nav:
+            if sl == section:
+                items.append((key, label, href))
+                break
+        else:
+            nav.insert(len(nav) - 1, (section, [(key, label, href)]))
     groups = ""
-    for label, items in NAV:
+    for label, items in nav:
         links = "".join(
-            f'<a href="{href}" class="{"on" if key == active else ""}">{icon(key)}<span>{name}</span>'
+            f'<a href="{href}" class="{"on" if key == active else ""}">{EXTRA_ICONS.get(key) or icon(key)}<span>{name}</span>'
             f'<span class="count">{esc(counts.get(key, ""))}</span></a>' for key, name, href in items)
         groups += (f'<div class="nav-label">{esc(label)}</div>' if label else "") + links
     trail = crumbs or [("Fleet", None), (title, None)]
@@ -144,6 +162,7 @@ def page(title: str, body: str, active: str = "", crumbs: Optional[list] = None,
   <nav class=nav>{groups}</nav>
   <div class=side-foot>
     <button class="btn ghost" onclick=sealedTheme() title="Light / dark">{icon('theme')}<span>Theme</span></button>
+    <span class=dim style="font-size:11px">{esc(core.EDITION["name"])}</span>
     <a class="btn ghost" href="/ui/logout" style="margin-left:auto">Log out</a>
   </div>
 </aside>
