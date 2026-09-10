@@ -1,5 +1,7 @@
 # sealed
 
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 Run apps on confidential data **with no way out**. AI models, format converters, OCR, redaction, any service that
 transforms a document.
 
