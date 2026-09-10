@@ -71,14 +71,14 @@ def check(policy: Policy, op: str, input_value: Any, output: Any) -> GateVerdict
 
 
 def audit(policy: Policy, image: str, image_id: str, op: str, input_value: Any, output: Any,
-          verdict: GateVerdict, duration: float, ok: bool) -> None:
+          verdict: GateVerdict, duration: float, ok: bool, client: str = "cli") -> None:
     if not policy.audit:
         return
     raw_in = input_value if isinstance(input_value, str) else json.dumps(input_value, ensure_ascii=False)
     raw_out = output if isinstance(output, str) else json.dumps(output, ensure_ascii=False)
     line = {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "policy": policy.name, "tier": policy.tier,
+        "policy": policy.name, "tier": policy.tier, "client": client,
         "image": image, "image_id": image_id, "op": op,
         "input_sha256": hashlib.sha256(raw_in.encode()).hexdigest(), "input_chars": len(raw_in),
         "output_chars": len(raw_out or ""), "app_ok": ok,

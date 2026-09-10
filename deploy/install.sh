@@ -35,10 +35,12 @@ if [ -n "${SEALED_CONTROL:-}" ] && [ -n "${SEALED_ENROLL_TOKEN:-}" ]; then
   echo "== enrol with control plane"
   $S enroll "$SEALED_CONTROL" "$SEALED_ENROLL_TOKEN"
 fi
+echo "== gateway API key (shown once, keep it)"
+$S keys create --label default | head -1
 echo "== start gateway + launcher (+ agent if enrolled)"
 export SEALED_UID=$(id -u) SEALED_GID=$(id -g)
 if [ -f "$HOME/.sealed/agent.json" ]; then docker compose --profile managed up -d; else docker compose up -d; fi
 echo
 echo "sealed is running. Try:"
 echo "  echo 'Hello confidential world' | $DIR/$S run translate-marian --op translate -p source=en -p target=de"
-echo "  curl -F file=@doc.docx -F app=docx2pdf -F op=convert http://127.0.0.1:8470/v1/files -o doc.pdf"
+echo "  curl -H 'authorization: Bearer <key>' -F file=@doc.docx -F app=docx2pdf -F op=convert http://127.0.0.1:8470/v1/files -o doc.pdf"

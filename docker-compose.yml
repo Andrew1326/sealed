@@ -9,6 +9,7 @@ services:
     environment:
       SEALED_HOME: ${HOME}/.sealed
       SEALED_LAUNCHER: http://launcher:8473
+      SEALED_ALLOW_NO_KEYS: "1"                     # the port is published on 127.0.0.1 only; create keys (`sealed keys create`) before exposing it
     depends_on: [launcher]
     user: "${SEALED_UID:-1000}:${SEALED_GID:-1000}"    # owner of ~/.sealed, so the audit log stays writable with all caps dropped
     read_only: true

@@ -6,13 +6,14 @@ from typing import Any, Optional
 import base64
 import mimetypes
 import tempfile
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from . import manifest as mf
 from . import registry
 from .gate import audit, check
+from . import auth
 from .paths import AUDIT
 from .policy import Policy
 from .sandbox import run_job, wants_gpu, RunResult
@@ -48,6 +49,23 @@ GPU_FLAG = os.environ.get("SEALED_GPU", "0") == "1"
 app = FastAPI(title="sealed gateway", version="0.0.1")
 
 
+def client(request: Request, authorization: str = Header("")) -> dict:
+    """API-key check. No keys configured = dev mode, localhost only (enforced at startup in cli.serve)."""
+    keys = auth.load()
+    if not keys:
+        return {"label": "local-dev", "policies": ["*"]}
+    entry = auth.check(authorization.removeprefix("Bearer ").strip())
+    if not entry:
+        raise HTTPException(401, "API key required: Authorization: Bearer sk_...")
+    return entry
+
+
+def policy_for(c: dict, name: str) -> Policy:
+    if "*" not in c["policies"] and name not in c["policies"]:
+        raise HTTPException(403, f"client '{c['label']}' may not use policy '{name}'")
+    return load_policy(name)
+
+
 class Job(BaseModel):
     app: str
     op: str
@@ -63,18 +81,23 @@ def load_policy(name: str) -> Policy:
     return Policy.load(p)
 
 
+@app.get("/health")
+def health():
+    return {"ok": True, "auth": "api-key" if auth.load() else "localhost-dev"}
+
+
 @app.get("/v1/apps")
-def apps():
+def apps(c: dict = Depends(client)):
     return registry.load()
 
 
 @app.get("/v1/policies")
-def policies():
+def policies(c: dict = Depends(client)):
     return sorted(p.stem for p in POLICY_DIR.glob("*.yaml"))
 
 
 @app.get("/v1/audit")
-def audit_tail(n: int = 50):
+def audit_tail(n: int = 50, c: dict = Depends(client)):
     if not AUDIT.exists():
         return []
     lines = AUDIT.read_text().splitlines()[-n:]
@@ -82,7 +105,7 @@ def audit_tail(n: int = 50):
 
 
 @app.get("/v1/pool")
-def pool_status():
+def pool_status(c: dict = Depends(client)):
     if LAUNCHER:
         with urllib.request.urlopen(LAUNCHER + "/pool", timeout=10) as r:
             return _json.loads(r.read())
@@ -108,9 +131,9 @@ def _resolve(policy: Policy, app_name: str, op: str):
 
 @app.post("/v1/files")
 async def submit_file(file: UploadFile = File(...), app_name: str = Form(..., alias="app"), op: str = Form("translate"),
-                      params: str = Form("{}"), policy_name: str = Form("confidential", alias="policy")):
+                      params: str = Form("{}"), policy_name: str = Form("confidential", alias="policy"), c: dict = Depends(client)):
     """Upload a txt/md/docx/pdf. translate -> same format back; summarize/extract/classify -> JSON."""
-    policy = load_policy(policy_name)
+    policy = policy_for(c, policy_name)
     image, iid, gpu, entry = _resolve(policy, app_name, op)
     prm = __import__("json").loads(params or "{}")
     tmp = Path(tempfile.mkdtemp(prefix="sealed-"))
@@ -121,7 +144,7 @@ async def submit_file(file: UploadFile = File(...), app_name: str = Form(..., al
         res = execute(image, iid, entry, op, text, prm, policy, gpu)
         verdict = check(policy, op, text, res.output) if res.ok else None
         audit(policy, image, iid, op, text, res.output if res.ok else None,
-              verdict or type("V", (), {"allowed": False, "reason": res.error})(), res.duration, res.ok)
+              verdict or type("V", (), {"allowed": False, "reason": res.error})(), res.duration, res.ok, client=c["label"])
         if not res.ok:
             raise HTTPException(502, {"error": res.error, "stderr_tail": res.stderr[-500:]})
         if not verdict.allowed:
@@ -148,13 +171,13 @@ async def submit_file(file: UploadFile = File(...), app_name: str = Form(..., al
 
 
 @app.post("/v1/jobs")
-def submit(job: Job):
-    policy = load_policy(job.policy)
+def submit(job: Job, c: dict = Depends(client)):
+    policy = policy_for(c, job.policy)
     image, iid, gpu, entry = _resolve(policy, job.app, job.op)
     res = execute(image, iid, entry, job.op, job.input, job.params, policy, gpu)
     verdict = check(policy, job.op, job.input, res.output) if res.ok else None
     audit(policy, image, iid, job.op, job.input, res.output if res.ok else None,
-          verdict or type("V", (), {"allowed": False, "reason": res.error})(), res.duration, res.ok)
+          verdict or type("V", (), {"allowed": False, "reason": res.error})(), res.duration, res.ok, client=c["label"])
     if not res.ok:
         raise HTTPException(502, {"error": res.error, "stderr_tail": res.stderr[-500:]})
     if not verdict.allowed:

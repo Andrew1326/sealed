@@ -149,7 +149,11 @@ def contract(image):
 def serve(host, port):
     """Start the local gateway."""
     import uvicorn
-    click.echo(f"sealed home: {HOME}  allowlist: {ALLOWLIST}")
+    from . import auth
+    if not auth.load() and host not in ("127.0.0.1", "localhost", "::1") and os.environ.get("SEALED_ALLOW_NO_KEYS") != "1":
+        click.echo(f"refusing to bind {host} without API keys. Create one: sealed keys create --label myapp", err=True)
+        sys.exit(2)
+    click.echo(f"sealed home: {HOME}  allowlist: {ALLOWLIST}  auth: {'api-key' if auth.load() else 'none (localhost dev mode)'}")
     uvicorn.run("sealed.gateway:app", host=host, port=port)
 
 
@@ -321,3 +325,31 @@ def agent(interval, once):
         click.echo(json.dumps(ag.heartbeat_once(json.loads(ag.STATE.read_text()))))
     else:
         ag.run(interval)
+
+
+@main.group()
+def keys():
+    """Gateway API keys."""
+
+
+@keys.command("create")
+@click.option("--label", required=True)
+@click.option("--policy", "policies", multiple=True, help="restrict to these policies (default: any)")
+def keys_create(label, policies):
+    from . import auth
+    key = auth.create(label, list(policies) or None)
+    click.echo(f"{key}\n(shown once; stored hashed in {auth.KEYS})")
+
+
+@keys.command("list")
+def keys_list():
+    from . import auth
+    for h, e in auth.load().items():
+        click.echo(f"{e['label']:24} policies={','.join(e['policies']):20} created {e['created']}  {h[:12]}…")
+
+
+@keys.command("revoke")
+@click.argument("label")
+def keys_revoke(label):
+    from . import auth
+    click.echo(f"revoked {auth.revoke(label)} key(s) labelled {label}")

@@ -41,6 +41,9 @@ $S run qwen3-4b --op translate -p source=en -p target=ru --file contract.docx   
 $S serve                   # HTTP gateway on 127.0.0.1:8470
 ```
 
+Gateway auth: `sealed keys create --label myapp` prints a key once; from then on every `/v1` call needs
+`Authorization: Bearer sk_...`. Keys can be limited to policies. With no keys the gateway only binds localhost.
+
 Gateway API: `POST /v1/jobs` (JSON text jobs), `POST /v1/files` (multipart upload: docx/txt/md/pdf in, same format out
 for translate, JSON for extract/summarize/classify), `GET /v1/apps`, `GET /v1/pool`, `GET /v1/audit`.
 
