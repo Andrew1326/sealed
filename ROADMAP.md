@@ -18,7 +18,7 @@ Working order. Engineering first, launch material when media is ready. Updated a
 3. [x] **TLS**: self-signed certs built in, runners pin the control plane fingerprint, both services refuse public binds without TLS, Caddy alternative documented
 4. [x] **Pseudonymization pass** for the `standard` tier, plus the remote-provider path it protects (OpenAI-compatible endpoints, refused under any confidential policy)
 5. [x] **PDF with layout**: pdf2docx app (PyMuPDF) -> translate -> docx2pdf, PDF in, PDF out
-6. [ ] **CUDA variants** of translate-marian and extract-qwen in the registry
+6. [x] **CUDA variants**: registry variants (same signed source, build arg), translate-marian and extract-qwen cuda entries, GPU capability recorded at verify
 7. [ ] **More catalog apps** driven by customer conversations: OCR, PII redaction, speech-to-text, spreadsheets
 8. [ ] **Cloud automation**: control plane creates the runner VM through a provider API (Hetzner first)
 9. [ ] **Installer test** on a throwaway VM (needs a provider token)

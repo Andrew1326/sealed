@@ -222,7 +222,7 @@ def verify(image: str, gpu: bool = False, skip_scan: bool = False, log=print) ->
     path = REPORTS / f"{man['name']}-{int(time.time())}.json"
     path.write_text(json.dumps(rep.to_dict(), indent=2, ensure_ascii=False))
     if rep.passed:
-        registry.add(iid, image, man, str(path))
+        registry.add(iid, image, man, str(path), gpu_verified=gpu)
         log(f"VERIFIED  {image}  ->  {iid[:19]}…  added to allowlist")
     else:
         log(f"REJECTED  {image}  see {path}")

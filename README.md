@@ -100,7 +100,7 @@ sealed sign apps/translate --image sealed/translate-marian:0.3.1   # writes regi
 sealed trust <publisher public key> "sealed community"
 sealed catalog --registry https://raw.githubusercontent.com/<org>/sealed/main/registry
 sealed install translate-marian --registry <same url>          # fetch, check, build (downloads pinned weights), verify, allow
-sealed install qwen3-4b --build-arg TORCH=cu128 --gpu           # CUDA variant on a GPU host
+sealed install translate-marian --variant cuda --gpu           # CUDA variant of the same signed source, on a GPU host
 ```
 
 Model weights are pinned to Hugging Face commit revisions in each manifest and fetched at build time, so two users

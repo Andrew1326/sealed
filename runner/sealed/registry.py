@@ -16,13 +16,14 @@ def save(d: dict) -> None:
     ALLOWLIST.write_text(json.dumps(d, indent=2))
 
 
-def add(image_id: str, image: str, manifest: dict, report_path: str) -> None:
+def add(image_id: str, image: str, manifest: dict, report_path: str, gpu_verified: bool = False) -> None:
     d = load()
     d[image_id] = {
         "image": image, "name": manifest["name"], "version": manifest["version"],
         "operations": manifest["operations"], "requires": manifest.get("requires", {}),
         "input": manifest.get("input", "text/plain"), "output": manifest.get("output", "text/plain"),
         "output_extension": manifest.get("output_extension"),
+        "gpu_verified": gpu_verified,     # verified with GPU access: the runner will offer the GPU regardless of the manifest
         "verified_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "report": report_path,
     }
     save(d)

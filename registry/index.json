@@ -1,9 +1,10 @@
 {
-  "updated": "2026-09-10T15:57:53Z",
+  "updated": "2026-09-10T20:35:34Z",
   "apps": [
     {
       "name": "docx2pdf",
       "version": "0.1.0",
+      "variant": "",
       "description": "Convert Office documents (docx, xlsx, pptx, odt, rtf) to PDF with LibreOffice, fully offline. Not an AI app: same sandbox, same guarantee.",
       "operations": [
         "convert"
@@ -13,12 +14,14 @@
         "memory": "2g",
         "timeout_seconds": 120
       },
+      "build_args": {},
       "source": "docx2pdf-0.1.0.src.tar.gz",
       "entry": "docx2pdf-0.1.0.json"
     },
     {
       "name": "extract-qwen",
       "version": "0.3.0",
+      "variant": "cuda",
       "description": "Offline structured extraction and summarization with Qwen2.5-1.5B-Instruct (CPU).",
       "operations": [
         "extract",
@@ -29,12 +32,34 @@
         "memory": "8g",
         "timeout_seconds": 600
       },
+      "build_args": {
+        "TORCH": "cu128"
+      },
+      "source": "extract-qwen-0.3.0.src.tar.gz",
+      "entry": "extract-qwen-0.3.0-cuda.json"
+    },
+    {
+      "name": "extract-qwen",
+      "version": "0.3.0",
+      "variant": "",
+      "description": "Offline structured extraction and summarization with Qwen2.5-1.5B-Instruct (CPU).",
+      "operations": [
+        "extract",
+        "summarize"
+      ],
+      "requires": {
+        "gpu": "none",
+        "memory": "8g",
+        "timeout_seconds": 600
+      },
+      "build_args": {},
       "source": "extract-qwen-0.3.0.src.tar.gz",
       "entry": "extract-qwen-0.3.0.json"
     },
     {
       "name": "pdf2docx",
       "version": "0.1.0",
+      "variant": "",
       "description": "Rebuild a PDF as an editable DOCX with real paragraphs and tables (pdf2docx + PyMuPDF), fully offline. Not an AI app.",
       "operations": [
         "convert"
@@ -44,12 +69,14 @@
         "memory": "2g",
         "timeout_seconds": 300
       },
+      "build_args": {},
       "source": "pdf2docx-0.1.0.src.tar.gz",
       "entry": "pdf2docx-0.1.0.json"
     },
     {
       "name": "qwen3-4b",
       "version": "0.2.0",
+      "variant": "",
       "description": "Quality tier: Qwen3-4B-Instruct for translation (any language pair), summarization, extraction and classification. GPU recommended, runs on CPU.",
       "operations": [
         "translate",
@@ -62,12 +89,16 @@
         "memory": "16g",
         "timeout_seconds": 1800
       },
+      "build_args": {
+        "TORCH": "cu128"
+      },
       "source": "qwen3-4b-0.2.0.src.tar.gz",
       "entry": "qwen3-4b-0.2.0.json"
     },
     {
       "name": "translate-marian",
       "version": "0.3.1",
+      "variant": "cuda",
       "description": "Offline neural translation (Helsinki-NLP OPUS-MT). Pairs: en-de, de-en, en-ru, ru-en, en-fr, fr-en.",
       "operations": [
         "translate"
@@ -77,6 +108,26 @@
         "memory": "4g",
         "timeout_seconds": 300
       },
+      "build_args": {
+        "TORCH": "cu128"
+      },
+      "source": "translate-marian-0.3.1.src.tar.gz",
+      "entry": "translate-marian-0.3.1-cuda.json"
+    },
+    {
+      "name": "translate-marian",
+      "version": "0.3.1",
+      "variant": "",
+      "description": "Offline neural translation (Helsinki-NLP OPUS-MT). Pairs: en-de, de-en, en-ru, ru-en, en-fr, fr-en.",
+      "operations": [
+        "translate"
+      ],
+      "requires": {
+        "gpu": "none",
+        "memory": "4g",
+        "timeout_seconds": 300
+      },
+      "build_args": {},
       "source": "translate-marian-0.3.1.src.tar.gz",
       "entry": "translate-marian-0.3.1.json"
     }

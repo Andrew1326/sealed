@@ -1,0 +1,58 @@
+{
+  "name": "translate-marian",
+  "version": "0.3.1",
+  "variant": "cuda",
+  "description": "Offline neural translation (Helsinki-NLP OPUS-MT). Pairs: en-de, de-en, en-ru, ru-en, en-fr, fr-en.",
+  "operations": [
+    "translate"
+  ],
+  "requires": {
+    "gpu": "none",
+    "memory": "4g",
+    "timeout_seconds": 300
+  },
+  "models": [
+    {
+      "id": "Helsinki-NLP/opus-mt-en-de",
+      "license": "CC-BY-4.0",
+      "revision": "6183067f769a302e3861815543b9f312c71b0ca4"
+    },
+    {
+      "id": "Helsinki-NLP/opus-mt-de-en",
+      "license": "CC-BY-4.0",
+      "revision": "1a922f3b32a8e809e17a47d4b32142d8105924e5"
+    },
+    {
+      "id": "Helsinki-NLP/opus-mt-en-ru",
+      "license": "CC-BY-4.0",
+      "revision": "bb09c99d180016eac6819df3dae68edb1690fdee"
+    },
+    {
+      "id": "Helsinki-NLP/opus-mt-ru-en",
+      "license": "CC-BY-4.0",
+      "revision": "fbd6dc73284f95536648512cc21d57f19191961a"
+    },
+    {
+      "id": "Helsinki-NLP/opus-mt-en-fr",
+      "license": "CC-BY-4.0",
+      "revision": "dd7f6540a7a48a7f4db59e5c0b9c42c8eea67f18"
+    },
+    {
+      "id": "Helsinki-NLP/opus-mt-fr-en",
+      "license": "CC-BY-4.0",
+      "revision": "c4aed37b318c763fd177aa449b44e3b783cc6c02"
+    }
+  ],
+  "source": {
+    "file": "translate-marian-0.3.1.src.tar.gz",
+    "sha256": "a6d7d61e4ec543fe32daac813a81d1505bff1e1cdbc74aea18e344da14322f06",
+    "build_args": {
+      "TORCH": "cu128"
+    }
+  },
+  "publisher_image_id": "sha256:3c0bdc02e79e799074b110aeda177dd4668377e75c8009d53f7feb6daffece87",
+  "publisher_report_sha256": "816e97e4bd0c4c3529e6182ce7c01c77d467416ec496862784b311692f4ac402",
+  "signed_at": "2026-09-10T20:35:34Z",
+  "publisher_key": "lCQf6IWKfq+5u50EoD+yGgyTFuuD7Vzw5CewbfIYlts=",
+  "signature": "QQSdZ2fUOFVpR3O21mog1LsWBGayyiDBEs62aarUMbPV+ojo5sFvjnm3DkAwBNu7hAKfSY8u0cJt5/TC7W3NDQ=="
+}

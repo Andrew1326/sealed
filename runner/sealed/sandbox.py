@@ -37,6 +37,8 @@ def wants_gpu(entry: Optional[dict], flag: bool = False) -> bool:
     """GPU on when the user asks, or when the verified manifest says optional/required and the host has one."""
     if flag:
         return has_gpu()
+    if (entry or {}).get("gpu_verified"):
+        return has_gpu()
     req = ((entry or {}).get("requires") or {}).get("gpu", "none")
     return req in ("optional", "required") and has_gpu()
 

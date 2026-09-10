@@ -21,3 +21,16 @@ $S install translate-marian --tag sealed/translate-marian:test-install 2>&1 | gr
 $S apps | grep -q translate-marian && echo "PASS installed from source"
 docker rmi -f sealed/translate-marian:test-install >/dev/null
 rm -rf "$SEALED_HOME" "$T"
+echo "== variants: the cuda entry is the same signed source with a build arg; install picks it by --variant"
+export SEALED_HOME=$(mktemp -d); $S trust "$PUB" test-publisher >/dev/null
+$S catalog | grep -q "translate-marian \[cuda\]" && echo "  PASS catalog lists the variant"
+OUT=$($S install translate-marian --variant nope 2>&1 || true); grep -q "variants available" <<<"$OUT" && echo "  PASS unknown variant refused with the list"
+if [ -e /dev/nvidiactl ]; then
+  $S install translate-marian --variant cuda --gpu --tag sealed/translate-marian:test-cuda 2>&1 | grep -E "signature ok|VERIFIED|REJECTED"
+  .venv/bin/python -c "
+from sealed import registry; e=[v for v in registry.load().values() if v['image']=='sealed/translate-marian:test-cuda'][0]; assert e['gpu_verified'], e; print('  PASS gpu capability recorded on the allowlist entry')"
+  docker rmi -f sealed/translate-marian:test-cuda >/dev/null
+else
+  echo "  (no GPU on this host, variant build skipped)"
+fi
+rm -rf "$SEALED_HOME"

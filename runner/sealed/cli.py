@@ -262,7 +262,8 @@ def trust(pubkey, label):
 @click.option("--build-arg", "build_args", multiple=True, help="key=value build args users need (e.g. TORCH=cu128 for a CUDA variant)")
 @click.option("--registry", "registry_dir", default=DEFAULT_REGISTRY, help="registry directory to write into")
 @click.option("--key", default="publisher")
-def sign(app_dir, image, build_args, registry_dir, key):
+@click.option("--variant", default="", help="label for a build-arg variant of the same source, e.g. cuda")
+def sign(app_dir, image, build_args, registry_dir, key, variant):
     """Package APP_DIR (Dockerfile, handler, manifest, fixtures) and sign it. Users build it themselves."""
     iid = mf.image_id(image)
     entry = registry.lookup(iid) if iid else None
@@ -277,9 +278,10 @@ def sign(app_dir, image, build_args, registry_dir, key):
     reg = Path(registry_dir); reg.mkdir(parents=True, exist_ok=True)
     fname = f"{man['name']}-{man['version']}.src.tar.gz"
     (reg / fname).write_bytes(data)
-    e = signing.sign_entry(signing.make_entry(man, fname, srcpkg.sha256(data), dict(kv.split("=", 1) for kv in build_args), iid, entry["report"]), key)
+    e = signing.sign_entry(signing.make_entry(man, fname, srcpkg.sha256(data), dict(kv.split("=", 1) for kv in build_args), iid,
+                                              entry["report"], variant), key)
     path = signing.write_registry_entry(reg, e)
-    click.echo(f"signed {man['name']} {man['version']}  source {fname} ({len(data)//1024} KB, sha256 {srcpkg.sha256(data)[:16]}…) -> {path}")
+    click.echo(f"signed {man['name']} {man['version']}{(' [' + variant + ']') if variant else ''}  source {fname} ({len(data)//1024} KB, sha256 {srcpkg.sha256(data)[:16]}…) -> {path}")
 
 
 @main.command()
@@ -289,7 +291,8 @@ def catalog(base):
     idx = signing.fetch_index(base)
     for a in idx["apps"]:
         gpu = a["requires"].get("gpu", "none")
-        click.echo(f"{a['name']:20} {a['version']:12} {','.join(a['operations']):40} gpu={gpu:8} mem={a['requires'].get('memory','?')}  {a['description'][:60]}")
+        label = a["name"] + (f" [{a['variant']}]" if a.get("variant") else "")
+        click.echo(f"{label:26} {a['version']:8} {','.join(a['operations']):40} gpu={gpu:8} mem={a['requires'].get('memory','?')}  {a['description'][:50]}")
 
 
 @main.command()
@@ -299,12 +302,16 @@ def catalog(base):
 @click.option("--build-arg", "build_args", multiple=True, help="override/add docker build args (key=value)")
 @click.option("--gpu", is_flag=True, help="verify with GPU access (use with a CUDA build arg if the app offers one)")
 @click.option("--tag", default=None, help="image tag for the local build (default sealed/<name>:<version>[-<build args>])")
-def install(name, base, version, build_args, gpu, tag):
+@click.option("--variant", default="", help="pick a variant of the app, e.g. cuda (see `sealed catalog`)")
+def install(name, base, version, build_args, gpu, tag, variant):
     """Fetch a signed source package, check signature and hash, build the image locally, run verify, allow."""
     idx = signing.fetch_index(base)
-    cands = [a for a in idx["apps"] if a["name"] == name and (version is None or a["version"] == version)]
+    cands = [a for a in idx["apps"] if a["name"] == name and (version is None or a["version"] == version)
+             and (a.get("variant", "") == variant)]
     if not cands:
-        click.echo(f"no app '{name}' in registry {base}", err=True)
+        have = sorted({a.get("variant", "") or "(default)" for a in idx["apps"] if a["name"] == name})
+        click.echo(f"no app '{name}'{(' variant ' + variant) if variant else ''} in registry {base}" +
+                   (f"; variants available: {', '.join(have)}" if have else ""), err=True)
         sys.exit(2)
     a = max(cands, key=lambda x: x["version"])
     e = signing.fetch_entry(base, a["entry"])
