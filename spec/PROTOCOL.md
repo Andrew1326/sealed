@@ -19,9 +19,12 @@ regardless of what the image asks for. There is no way to opt out.
 ## Job (one line on stdin)
 
     {"op": "translate", "input": "text...", "params": {"source": "en", "target": "de"}}
+    {"op": "convert", "input": "<base64 of a .docx>", "params": {}}
 
-`input` is a string for `text/plain` apps, a JSON value for `application/json` apps,
-and base64 for `application/octet-stream` apps.
+`input` is a string for `text/*` apps, a JSON value for `application/json` apps, and a base64 string for
+every other MIME type (docx, pdf, images, audio, archives). The same rule applies to `output`. Apps are not
+limited to AI: a format converter, an OCR engine, a virus scanner, a PII redactor, or any batch service that
+transforms data fits the same contract, and gets the same guarantee.
 
 ## Result (one line on stdout)
 
@@ -39,4 +42,5 @@ Anything written to stderr is captured for diagnostics and never leaves the host
       {"input": "", "params": {}, "expect": {"ok": false}}
     ]
 
-Supported expectations: `ok`, `contains_any`, `contains_all`, `not_contains`, `json_keys`, `max_chars`.
+Supported expectations: `ok`, `contains_any`, `contains_all`, `not_contains`, `json_keys`, `max_chars`, `starts_with`, `min_chars`.
+Fixture `input` may be `{"file": "tests/sample.docx"}` for binary apps; the runner base64-encodes it.

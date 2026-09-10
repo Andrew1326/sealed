@@ -75,12 +75,13 @@ def trust(pub: str, label: str) -> None:
     TRUSTED.write_text(json.dumps(d, indent=2))
 
 
-def make_entry(image_ref: str, image_id: str, manifest: dict, report_path: str) -> dict:
+def make_entry(manifest: dict, source_file: str, source_sha256: str, build_args: dict, publisher_image_id: str, report_path: str) -> dict:
     return {
         "name": manifest["name"], "version": manifest["version"], "description": manifest.get("description", ""),
         "operations": manifest["operations"], "requires": manifest.get("requires", {}), "models": manifest.get("models", []),
-        "image": image_ref, "image_id": image_id,
-        "report_sha256": hashlib.sha256(Path(report_path).read_bytes()).hexdigest(),
+        "source": {"file": source_file, "sha256": source_sha256, "build_args": build_args},
+        "publisher_image_id": publisher_image_id,
+        "publisher_report_sha256": hashlib.sha256(Path(report_path).read_bytes()).hexdigest(),
         "signed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
 
@@ -95,8 +96,8 @@ def write_registry_entry(registry_dir: Path, entry: dict) -> Path:
             continue
         e = json.loads(f.read_text())
         index["apps"].append({"name": e["name"], "version": e["version"], "description": e["description"],
-                              "operations": e["operations"], "requires": e["requires"], "image": e["image"],
-                              "image_id": e["image_id"], "entry": f.name})
+                              "operations": e["operations"], "requires": e["requires"], "source": e["source"]["file"],
+                              "entry": f.name})
     (registry_dir / "index.json").write_text(json.dumps(index, indent=2, ensure_ascii=False))
     return path
 

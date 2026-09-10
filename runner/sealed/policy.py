@@ -17,7 +17,10 @@ class Policy:
     name: str
     tier: str = "confidential"
     require_verified: bool = True
-    allowed_ops: list = field(default_factory=lambda: ["translate", "summarize", "extract", "classify", "ocr", "transcribe"])
+    allowed_ops: list = field(default_factory=lambda: ["*"])
+
+    def allows(self, op: str) -> bool:
+        return "*" in self.allowed_ops or op in self.allowed_ops
     output: OutputRules = field(default_factory=OutputRules)
     memory: str = "8g"
     timeout_seconds: int = 300

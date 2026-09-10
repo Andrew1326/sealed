@@ -1,6 +1,7 @@
 # sealed
 
-Run AI apps on confidential data **with no way out**.
+Run apps on confidential data **with no way out**. AI models, format converters, OCR, redaction, any service that
+transforms a document.
 
 An app in this network never receives your data. It ships a container. Your runner executes that
 container with no network, no writable filesystem, no capabilities, and one exit: an output gate you
@@ -33,6 +34,7 @@ S=.venv/bin/sealed
 echo "This agreement is confidential." | $S run translate-marian --op translate -p source=en -p target=de
 $S run translate-marian --op translate -p source=en -p target=de --file contract.docx --out contract.de.docx   # docx, txt, md, pdf
 $S run extract-qwen --op extract --file contract.docx
+$S run docx2pdf --op convert --file contract.docx --out contract.pdf                 # not AI: LibreOffice in the same sandbox
 $S run qwen3-4b --op translate -p source=en -p target=ru --file contract.docx      # quality tier, any language pair, uses the GPU
 $S serve                   # HTTP gateway on 127.0.0.1:8470
 ```
@@ -55,7 +57,7 @@ Or as a service: `docker compose up -d` (gateway on 127.0.0.1:8470). It shares `
 | Spec | `spec/` | Manifest schema and the stdin/stdout job protocol an app must implement. |
 | Warm pool | `runner/sealed/pool.py` | One loaded container per app kept alive between jobs (same sandbox). First job pays the model load, later jobs take milliseconds. |
 | Documents | `runner/sealed/documents.py` | docx/txt/md/pdf in, chunked into jobs, rebuilt with formatting and tables kept (pdf comes back as txt). |
-| Apps | `apps/` | `translate-marian` (OPUS-MT, 6 pairs, CPU), `extract-qwen` (Qwen2.5-1.5B, CPU), `qwen3-4b` (quality tier: translate any pair, summarize, extract, classify; GPU), `evil` (test image). |
+| Apps | `apps/` | `translate-marian` (OPUS-MT, 6 pairs, CPU), `extract-qwen` (Qwen2.5-1.5B, CPU), `qwen3-4b` (quality tier: translate any pair, summarize, extract, classify; GPU), `docx2pdf` (LibreOffice, not AI), `evil` (test image). |
 
 ## The admission pipeline (`sealed verify`)
 
@@ -72,25 +74,29 @@ Or as a service: `docker compose up -d` (gateway on 127.0.0.1:8470). It shares `
 `apps/evil` is a "translator" that tries HTTP, DNS, raw sockets, rootfs writes, the docker socket,
 setuid and mount. `make test` shows all attempts blocked and the image rejected at step 6.
 
-## Registry: publish and install
+## Registry: publish and install (no image hosting)
 
-Publishers sign the result of `verify`; users install only entries signed by keys they trust, and the pulled
-image must have the exact content-addressed ID that was signed. Tampering with an entry, or swapping the image,
-is refused before anything runs.
+Nobody downloads images. A publisher signs a **source package** (Dockerfile, handler, manifest with pinned model
+revisions, conformance fixtures) after building and verifying it locally. A user fetches the package, checks the
+signature and hash, **builds the image on their own machine**, and runs the same admission pipeline. The
+guarantee comes from the user's own `verify` run, the publisher's signature only says "this is the source I stand behind".
 
 ```bash
 # publisher
-sealed keygen                                   # Ed25519 key in ~/.sealed/keys, trusted locally
-sealed verify sealed/translate-marian:0.2.0
-sealed sign   sealed/translate-marian:0.2.0 --ref ghcr.io/you/translate-marian:0.2.0   # writes registry/<name>-<version>.json + index.json
+sealed keygen                                                  # Ed25519 key in ~/.sealed/keys, trusted locally
+docker build -t sealed/translate-marian:0.3.0 apps/translate
+sealed verify sealed/translate-marian:0.3.0
+sealed sign apps/translate --image sealed/translate-marian:0.3.0   # writes registry/<name>-<ver>.src.tar.gz + .json + index.json
 # user
 sealed trust <publisher public key> "sealed community"
 sealed catalog --registry https://raw.githubusercontent.com/<org>/sealed/main/registry
-sealed install translate-marian --registry <same url>        # pulls, checks ID, re-runs verify locally
-sealed install translate-marian --no-verify                  # or accept the publisher's signed verification
+sealed install translate-marian --registry <same url>          # fetch, check, build (downloads pinned weights), verify, allow
+sealed install qwen3-4b --build-arg TORCH=cu128 --gpu           # CUDA variant on a GPU host
 ```
 
-The `registry/` directory in this repo is the first registry. Set `SEALED_REGISTRY` to point the runner elsewhere.
+Model weights are pinned to Hugging Face commit revisions in each manifest and fetched at build time, so two users
+building the same package get the same weights. Costs nothing to host: the registry is a directory of small files
+served from anywhere (this repo, a static bucket, a file share).
 
 ## Measured on this machine (RTX 5080, 32 cores)
 
@@ -101,6 +107,7 @@ The `registry/` directory in this repo is the first registry. Set `SEALED_REGIST
 | qwen3-4b (GPU), one paragraph, any op | 3.9 s | 3.1 s |
 | translate-marian, 6-section contract.docx with table | 10 s | |
 | qwen3-4b, same contract to Russian | 21 s | |
+| docx2pdf, same contract (LibreOffice) | 0.9 s | 0.5 s |
 
 ## GPU
 
@@ -126,14 +133,17 @@ apps when the host has one.
 
 ## Writing an app
 
-See `spec/PROTOCOL.md`. Minimal shape: a Dockerfile that bakes the model weights in, a `manifest.json`,
-fixtures under `/sealed/tests/`, a non-root user, and an entrypoint that reads one JSON job from stdin
-and writes one JSON result to stdout. `apps/translate` is 60 lines.
+See `spec/PROTOCOL.md`. Minimal shape: a Dockerfile with everything baked in (weights, binaries, fonts), a
+`manifest.json` declaring operations and input/output MIME types, fixtures under `/sealed/tests/`, a non-root
+user, and an entrypoint that reads JSON lines from stdin and writes JSON lines to stdout. Text goes as text,
+anything else as base64. `apps/translate` is 60 lines; `apps/docx2pdf` is 50 lines and no model at all.
+
+Apps are not limited to AI. Anything you would otherwise send to a SaaS to have processed fits: conversion,
+OCR, virus scanning, PII redaction, signature checks, report generation. Same contract, same guarantee.
 
 ## Roadmap
 
 - PDF output that keeps layout (currently pdf translates to txt).
 - Pseudonymization pass in the gateway for the `standard` tier.
-- Push community images to ghcr.io so `install` works without a local build.
 - gVisor/Kata runtime option and Docker socket proxy.
 - Management plane for deploying runners into customer cloud accounts.

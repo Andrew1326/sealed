@@ -2,6 +2,8 @@ import json
 import re
 import sys
 
+REV = {m["id"]: m["revision"] for m in json.load(open("/sealed/manifest.json"))["models"]}
+
 MODEL = "Qwen/Qwen3-4B-Instruct-2507"
 _m = None
 LANGS = {"en": "English", "de": "German", "fr": "French", "ru": "Russian", "es": "Spanish", "it": "Italian", "pt": "Portuguese",
@@ -16,8 +18,8 @@ def load():
         from transformers import AutoModelForCausalLM, AutoTokenizer
         dev = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.bfloat16 if dev == "cuda" else torch.float32
-        tok = AutoTokenizer.from_pretrained(MODEL)
-        model = AutoModelForCausalLM.from_pretrained(MODEL, torch_dtype=dtype).to(dev).eval()
+        tok = AutoTokenizer.from_pretrained(MODEL, revision=REV[MODEL])
+        model = AutoModelForCausalLM.from_pretrained(MODEL, revision=REV[MODEL], torch_dtype=dtype).to(dev).eval()
         _m = (tok, model, dev)
         print(f"loaded {MODEL} on {dev}", file=sys.stderr, flush=True)
     return _m

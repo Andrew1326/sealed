@@ -2,7 +2,7 @@
 name: confidential
 tier: confidential
 require_verified: true
-allowed_ops: [translate, summarize, extract, classify, ocr, transcribe]
+allowed_ops: ["*"]   # or an explicit list, e.g. [translate, convert]
 memory: 8g
 timeout_seconds: 300
 audit: true

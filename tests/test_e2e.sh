@@ -23,6 +23,9 @@ assert "CONFIDENTIEL" in (out / "memo.fr.txt").read_text().upper()
 assert "Соглашение" in (out / "contract.ru.txt").read_text()
 print("documents ok: formatting, table and content preserved")
 PY
+echo "== non-AI app: docx -> pdf with LibreOffice in the same sandbox"
+$S run docx2pdf --op convert --file $D/contract.docx --out $OUT/contract.pdf
+head -c 5 $OUT/contract.pdf | grep -q "%PDF-" && echo "  pdf ok ($(stat -c%s $OUT/contract.pdf) bytes)"
 echo "== extract + summarize on documents"
 $S run extract-qwen --op extract --file $D/contract.docx | head -c 300; echo
 $S run extract-qwen --op summarize -p max_words=40 --file $D/memo.txt
@@ -40,6 +43,8 @@ for i in 1 2 3; do
 done
 curl -sf -o $OUT/contract.fr.docx -F file=@$D/contract.docx -F app=translate-marian -F op=translate -F 'params={"source":"en","target":"fr"}' localhost:8471/v1/files
 [ -s $OUT/contract.fr.docx ] && echo "  file upload ok ($(stat -c%s $OUT/contract.fr.docx) bytes)"
+curl -sf -o $OUT/gw.pdf -F file=@$D/contract.docx -F app=docx2pdf -F op=convert localhost:8471/v1/files
+head -c 5 $OUT/gw.pdf | grep -q "%PDF-" && echo "  gateway convert ok ($(stat -c%s $OUT/gw.pdf) bytes)"
 curl -sf localhost:8471/v1/pool | python3 -c "import json,sys;[print('  warm:',w['image'],w['jobs'],'jobs') for w in json.load(sys.stdin)]"
 kill $GW; sleep 2
 [ -z "$(docker ps -q --filter name=sealed-warm)" ] && echo "  warm containers cleaned up on shutdown"

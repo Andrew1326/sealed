@@ -2,7 +2,7 @@
 name: standard
 tier: standard
 require_verified: false
-allowed_ops: [translate, summarize, extract, classify, ocr, transcribe, custom]
+allowed_ops: ["*"]
 memory: 16g
 timeout_seconds: 600
 audit: true

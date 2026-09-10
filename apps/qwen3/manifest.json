@@ -1,12 +1,27 @@
 {
   "name": "qwen3-4b",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Quality tier: Qwen3-4B-Instruct for translation (any language pair), summarization, extraction and classification. GPU recommended, runs on CPU.",
   "vendor": "sealed (community)",
   "license": "Apache-2.0",
-  "operations": ["translate", "summarize", "extract", "classify"],
+  "operations": [
+    "translate",
+    "summarize",
+    "extract",
+    "classify"
+  ],
   "input": "text/plain",
   "output": "application/json",
-  "requires": {"gpu": "optional", "memory": "16g", "timeout_seconds": 1800},
-  "models": [{"id": "Qwen/Qwen3-4B-Instruct-2507", "license": "Apache-2.0"}]
+  "requires": {
+    "gpu": "optional",
+    "memory": "16g",
+    "timeout_seconds": 1800
+  },
+  "models": [
+    {
+      "id": "Qwen/Qwen3-4B-Instruct-2507",
+      "license": "Apache-2.0",
+      "revision": "cdbee75f17c01a7cc42f958dc650907174af0554"
+    }
+  ]
 }

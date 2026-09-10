@@ -1,0 +1,24 @@
+{
+  "name": "docx2pdf",
+  "version": "0.1.0",
+  "description": "Convert Office documents (docx, xlsx, pptx, odt, rtf) to PDF with LibreOffice, fully offline. Not an AI app: same sandbox, same guarantee.",
+  "operations": [
+    "convert"
+  ],
+  "requires": {
+    "gpu": "none",
+    "memory": "2g",
+    "timeout_seconds": 120
+  },
+  "models": [],
+  "source": {
+    "file": "docx2pdf-0.1.0.src.tar.gz",
+    "sha256": "f3b3050f0de05cae681fbec704172b815c51c8da1dd9edb1adc1fd471497a4a4",
+    "build_args": {}
+  },
+  "publisher_image_id": "sha256:a96580535f1d6e328d718ad4798b8e86a489fe3259c905f0b30d1dc682957b49",
+  "publisher_report_sha256": "9929ff385e87c862e996f34f64a0e3f28e3e58453a5f2c1f83de1a0484a9f6a0",
+  "signed_at": "2026-09-10T08:55:38Z",
+  "publisher_key": "lCQf6IWKfq+5u50EoD+yGgyTFuuD7Vzw5CewbfIYlts=",
+  "signature": "IQZNdCaCnKqe1rTHmHUt/fWT3sgeqEHhmBGQoMwP8ijtQUjo0uYtL6JnItM8j0i788Md+aJIUal67Gu6e0avDw=="
+}

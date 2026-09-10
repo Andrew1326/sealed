@@ -21,6 +21,8 @@ def add(image_id: str, image: str, manifest: dict, report_path: str) -> None:
     d[image_id] = {
         "image": image, "name": manifest["name"], "version": manifest["version"],
         "operations": manifest["operations"], "requires": manifest.get("requires", {}),
+        "input": manifest.get("input", "text/plain"), "output": manifest.get("output", "text/plain"),
+        "output_extension": manifest.get("output_extension"),
         "verified_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "report": report_path,
     }
     save(d)

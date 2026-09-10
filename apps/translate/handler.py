@@ -2,6 +2,8 @@ import json
 import re
 import sys
 
+REV = {m["id"]: m["revision"] for m in json.load(open("/sealed/manifest.json"))["models"]}
+
 PAIRS = {"en-de", "de-en", "en-ru", "ru-en", "en-fr", "fr-en"}
 _models = {}
 
@@ -12,7 +14,7 @@ def load(pair):
         from transformers import MarianMTModel, MarianTokenizer
         name = f"Helsinki-NLP/opus-mt-{pair}"
         dev = "cuda" if torch.cuda.is_available() else "cpu"
-        _models[pair] = (MarianTokenizer.from_pretrained(name), MarianMTModel.from_pretrained(name).to(dev).eval(), dev)
+        _models[pair] = (MarianTokenizer.from_pretrained(name, revision=REV[name]), MarianMTModel.from_pretrained(name, revision=REV[name]).to(dev).eval(), dev)
     return _models[pair]
 
 

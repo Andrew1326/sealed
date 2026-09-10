@@ -11,8 +11,11 @@ from .paths import ALLOWLIST, AUDIT, HOME
 from .policy import Policy
 from .sandbox import run_job, sandbox_args, wants_gpu
 from .documents import process_file, whole_text
+import base64
+import mimetypes
 from .verify import verify as _verify
 from . import signing
+from . import source as srcpkg
 import os
 import subprocess
 
@@ -75,6 +78,24 @@ def run(app, op, policy_path, param, file_, out_, gpu, cold, unverified):
             sys.exit(3)
         return res.output
 
+    in_type = (entry or {}).get("input", "text/plain")
+    out_type = (entry or {}).get("output", "text/plain")
+    binary_in = not (in_type.startswith("text/") or in_type == "application/json")
+    binary_out = not (out_type.startswith("text/") or out_type == "application/json")
+    if binary_in or binary_out:
+        if not file_:
+            click.echo("this app takes a file: use --file", err=True)
+            sys.exit(2)
+        payload = base64.b64encode(Path(file_).read_bytes()).decode() if binary_in else Path(file_).read_text()
+        output = call(payload)
+        if binary_out:
+            ext = (entry or {}).get("output_extension") or (mimetypes.guess_extension(out_type) or ".bin").lstrip(".")
+            dst = Path(out_) if out_ else Path(file_).with_suffix("." + ext)
+            dst.write_bytes(base64.b64decode(output))
+            click.echo(f"wrote {dst} ({dst.stat().st_size} bytes)")
+        else:
+            click.echo(output if isinstance(output, str) else json.dumps(output, ensure_ascii=False, indent=2))
+        return
     if file_ and Path(file_).suffix.lower() in (".docx", ".pdf", ".txt", ".md", ".csv") and op == "translate":
         src = Path(file_)
         dst = Path(out_) if out_ else src.with_name(f"{src.stem}.{params.get('target', 'out')}{src.suffix}")
@@ -183,21 +204,29 @@ def trust(pubkey, label):
 
 
 @main.command()
-@click.argument("image")
-@click.option("--ref", default=None, help="image reference users will pull (default: the local tag)")
+@click.argument("app_dir", type=click.Path(exists=True, file_okay=False))
+@click.option("--image", required=True, help="the locally built and VERIFIED image of this source (proof the publisher ran verify)")
+@click.option("--build-arg", "build_args", multiple=True, help="key=value build args users need (e.g. TORCH=cu128 for a CUDA variant)")
 @click.option("--registry", "registry_dir", default=DEFAULT_REGISTRY, help="registry directory to write into")
 @click.option("--key", default="publisher")
-def sign(image, ref, registry_dir, key):
-    """Sign a VERIFIED image and write its registry entry + index."""
+def sign(app_dir, image, build_args, registry_dir, key):
+    """Package APP_DIR (Dockerfile, handler, manifest, fixtures) and sign it. Users build it themselves."""
     iid = mf.image_id(image)
     entry = registry.lookup(iid) if iid else None
     if not entry:
-        click.echo(f"{image} is not in the allowlist. Run `sealed verify {image}` first.", err=True)
+        click.echo(f"{image} is not in the allowlist. Build it from {app_dir} and run `sealed verify {image}` first.", err=True)
         sys.exit(2)
-    man = mf.read_manifest(image)
-    e = signing.sign_entry(signing.make_entry(ref or image, iid, man, entry["report"]), key)
-    path = signing.write_registry_entry(Path(registry_dir), e)
-    click.echo(f"signed {man['name']} {man['version']} -> {path}")
+    man = json.loads((Path(app_dir) / "manifest.json").read_text())
+    if man["name"] != entry["name"] or man["version"] != entry["version"]:
+        click.echo(f"{app_dir} manifest is {man['name']} {man['version']} but {image} was verified as {entry['name']} {entry['version']}", err=True)
+        sys.exit(2)
+    data = srcpkg.pack(Path(app_dir))
+    reg = Path(registry_dir); reg.mkdir(parents=True, exist_ok=True)
+    fname = f"{man['name']}-{man['version']}.src.tar.gz"
+    (reg / fname).write_bytes(data)
+    e = signing.sign_entry(signing.make_entry(man, fname, srcpkg.sha256(data), dict(kv.split("=", 1) for kv in build_args), iid, entry["report"]), key)
+    path = signing.write_registry_entry(reg, e)
+    click.echo(f"signed {man['name']} {man['version']}  source {fname} ({len(data)//1024} KB, sha256 {srcpkg.sha256(data)[:16]}…) -> {path}")
 
 
 @main.command()
@@ -214,10 +243,11 @@ def catalog(base):
 @click.argument("name")
 @click.option("--registry", "base", default=DEFAULT_REGISTRY, help="registry URL or directory")
 @click.option("--version", "version", default=None)
-@click.option("--no-verify", is_flag=True, help="trust the publisher's signed verification instead of re-running verify locally")
-@click.option("--gpu", is_flag=True)
-def install(name, base, version, no_verify, gpu):
-    """Fetch a signed registry entry, check the signature, pull the image, check its ID, verify, allow."""
+@click.option("--build-arg", "build_args", multiple=True, help="override/add docker build args (key=value)")
+@click.option("--gpu", is_flag=True, help="verify with GPU access (use with a CUDA build arg if the app offers one)")
+@click.option("--tag", default=None, help="image tag for the local build (default sealed/<name>:<version>[-<build args>])")
+def install(name, base, version, build_args, gpu, tag):
+    """Fetch a signed source package, check signature and hash, build the image locally, run verify, allow."""
     idx = signing.fetch_index(base)
     cands = [a for a in idx["apps"] if a["name"] == name and (version is None or a["version"] == version)]
     if not cands:
@@ -234,21 +264,24 @@ def install(name, base, version, no_verify, gpu):
                    f"If you trust this publisher: sealed trust {e.get('publisher_key')} <label>", err=True)
         sys.exit(3)
     click.echo(f"signature ok: {name} {e['version']} signed by {who}")
-    if mf.image_id(e["image"]) != e["image_id"]:
-        click.echo(f"pulling {e['image']} …")
-        r = subprocess.run(["docker", "pull", e["image"]], capture_output=True, text=True)
-        if r.returncode != 0:
-            click.echo(r.stderr.strip()[-500:], err=True)
-            sys.exit(4)
-    got = mf.image_id(e["image"])
-    if got != e["image_id"]:
-        click.echo(f"REFUSED: pulled image ID {got} does not match signed ID {e['image_id']}", err=True)
+    data = signing.fetch(base.rstrip("/") + "/" + e["source"]["file"])
+    if srcpkg.sha256(data) != e["source"]["sha256"]:
+        click.echo(f"REFUSED: source package hash {srcpkg.sha256(data)[:16]}… does not match signed {e['source']['sha256'][:16]}…", err=True)
         sys.exit(5)
-    click.echo(f"image ID matches signed entry ({got[:19]}…)")
-    if no_verify:
-        registry.add(got, e["image"], {"name": e["name"], "version": e["version"], "operations": e["operations"], "requires": e["requires"]},
-                     f"signed-by:{who}")
-        click.echo(f"installed {name} {e['version']} on the publisher's signed verification")
-        return
-    rep = _verify(e["image"], gpu=gpu, skip_scan=True)
+    click.echo(f"source package hash ok ({len(data)//1024} KB)")
+    build_dir = HOME / "build" / f"{name}-{e['version']}"
+    if build_dir.exists():
+        import shutil
+        shutil.rmtree(build_dir)
+    srcpkg.unpack(data, build_dir)
+    args = dict(e["source"].get("build_args") or {})
+    args.update(dict(kv.split("=", 1) for kv in build_args))
+    tag = tag or f"sealed/{name}:{e['version']}" + ("-" + "-".join(v for v in args.values()) if args else "")
+    cmd = ["docker", "build", "-t", tag] + sum((["--build-arg", f"{k}={v}"] for k, v in args.items()), []) + [str(build_dir)]
+    click.echo(f"building {tag} from {build_dir} (downloads pinned model revisions on first build)…")
+    r = subprocess.run(cmd)
+    if r.returncode != 0:
+        click.echo("build failed", err=True)
+        sys.exit(4)
+    rep = _verify(tag, gpu=gpu, skip_scan=True)
     sys.exit(0 if rep.passed else 1)

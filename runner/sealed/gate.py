@@ -48,9 +48,13 @@ def longest_verbatim_span(inp: str, out: str) -> int:
     return best
 
 
+def _looks_base64(s: str) -> bool:
+    return len(s) > 64 and " " not in s[:256] and all(c.isalnum() or c in "+/=" for c in s[:256])
+
+
 def check(policy: Policy, op: str, input_value: Any, output: Any) -> GateVerdict:
     rules = policy.output
-    if op not in policy.allowed_ops:
+    if not policy.allows(op):
         return GateVerdict(False, f"operation '{op}' not allowed by policy '{policy.name}'")
     text = output if isinstance(output, str) else json.dumps(output, ensure_ascii=False)
     if len(text) > rules.max_chars:
@@ -59,7 +63,7 @@ def check(policy: Policy, op: str, input_value: Any, output: Any) -> GateVerdict
         extra = set(output) - set(rules.allowed_keys)
         if extra:
             return GateVerdict(False, f"output contains keys outside policy: {sorted(extra)}")
-    if rules.max_verbatim_span_words and op != "translate" and isinstance(input_value, str):
+    if rules.max_verbatim_span_words and op not in ("translate", "convert") and isinstance(input_value, str) and not _looks_base64(input_value):
         span = longest_verbatim_span(input_value, text)
         if span > rules.max_verbatim_span_words:
             return GateVerdict(False, f"output repeats {span} consecutive input words, limit {rules.max_verbatim_span_words}")

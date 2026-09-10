@@ -1,0 +1,5 @@
+[
+  {"input": {"file": "tests/sample.docx"}, "params": {}, "expect": {"starts_with": "JVBERi0", "min_chars": 2000}},
+  {"input": "", "params": {}, "expect": {"ok": false}},
+  {"input": "bm90IGEgZG9jeA==", "params": {}, "expect": {"ok": false}}
+]

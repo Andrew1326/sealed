@@ -32,6 +32,17 @@ class Report:
         return {"image": self.image, "passed": self.passed, "steps": self.steps}
 
 
+def _fixture_input(image: str, fx: dict):
+    """Fixture input may be {"file": "tests/x.docx"} -> base64 of that file inside the image."""
+    inp = fx.get("input", "")
+    if isinstance(inp, dict) and "file" in inp:
+        p = run_raw(image, ["base64", "-w", "0", "/sealed/" + inp["file"]], timeout=60)
+        if p.returncode != 0:
+            raise RuntimeError(f"fixture file missing in image: {inp['file']}")
+        return p.stdout.decode().strip()
+    return inp
+
+
 def _expect(fixture: dict, res) -> tuple:
     exp = fixture.get("expect", {})
     if "ok" in exp and exp["ok"] != res.ok:
@@ -53,6 +64,10 @@ def _expect(fixture: dict, res) -> tuple:
             return False, f"missing keys {exp['json_keys']} in {text[:200]!r}"
     if "max_chars" in exp and len(text) > exp["max_chars"]:
         return False, f"output {len(text)} chars > {exp['max_chars']}"
+    if "min_chars" in exp and len(text) < exp["min_chars"]:
+        return False, f"output {len(text)} chars < {exp['min_chars']}"
+    if "starts_with" in exp and not text.startswith(exp["starts_with"]):
+        return False, f"output does not start with {exp['starts_with']!r}: {text[:60]!r}"
     return True, text[:120]
 
 
@@ -99,12 +114,15 @@ def verify(image: str, gpu: bool = False, skip_scan: bool = False, log=print) ->
         "except Exception as e: r['setuid']='blocked: '+type(e).__name__\n"
         "print(__import__('json').dumps(r))"
     )
-    p = run_raw(image, ["python", "-c", probe], timeout=60, gpu=gpu)
-    try:
-        pr = json.loads(p.stdout.decode().strip().splitlines()[-1])
-        ok = all(v.startswith("blocked") for v in pr.values())
-    except Exception:
-        pr, ok = {"error": p.stderr.decode(errors="replace")[-500:], "note": "image has no python; probe skipped"}, True
+    pr, ok = None, True
+    for py in ("python3", "python"):
+        p = run_raw(image, [py, "-c", probe], timeout=60, gpu=gpu)
+        if p.returncode == 0 and p.stdout.strip():
+            pr = json.loads(p.stdout.decode().strip().splitlines()[-1])
+            ok = all(v.startswith("blocked") for v in pr.values())
+            break
+    if pr is None:
+        pr = {"note": "image has no python; probe skipped (the evil-image test covers the sandbox itself)"}
     rep.step("sandbox.probe", ok, pr)
     log(f"[4/8] sandbox probe {pr}")
 
@@ -122,13 +140,13 @@ def verify(image: str, gpu: bool = False, skip_scan: bool = False, log=print) ->
             all_ok = False
             continue
         results = []
-        res = run_job(image, op, fixtures[0].get("input", ""), fixtures[0].get("params"), memory=mem, gpu=gpu, timeout=timeout)
+        res = run_job(image, op, _fixture_input(image, fixtures[0]), fixtures[0].get("params"), memory=mem, gpu=gpu, timeout=timeout)
         ok, detail = _expect(fixtures[0], res)
         results.append({"mode": "cold", "fixture": 0, "ok": ok, "detail": detail, "seconds": round(res.duration, 1)})
         log(f"[5/8] {op} cold fixture 0: {'ok' if ok else 'FAIL'} ({res.duration:.1f}s) {detail if not ok else ''}")
         w = Warm(image, mem, gpu)
         for i, fx in enumerate(fixtures):
-            res = w.submit(op, fx.get("input", ""), fx.get("params"), timeout)
+            res = w.submit(op, _fixture_input(image, fx), fx.get("params"), timeout)
             ok, detail = _expect(fx, res)
             results.append({"mode": "warm", "fixture": i, "ok": ok, "detail": detail, "seconds": round(res.duration, 1)})
             if not ok and res.stderr:
@@ -144,7 +162,7 @@ def verify(image: str, gpu: bool = False, skip_scan: bool = False, log=print) ->
         cfg_ep = (cfg.get("Entrypoint") or []) + (cfg.get("Cmd") or [])
         op0 = man["operations"][0]
         fx0 = mf.read_fixtures(image, op0)[0]
-        job = json.dumps({"op": op0, "input": fx0.get("input", ""), "params": fx0.get("params") or {}})
+        job = json.dumps({"op": op0, "input": _fixture_input(image, fx0), "params": fx0.get("params") or {}})
         ep = ["/.sealed-verify/ld-musl-x86_64.so.1", "--library-path", "/.sealed-verify", "/.sealed-verify/strace",
               "-f", "-qq", "-e", "trace=socket,connect,sendto,sendmsg,mount,setuid,setgid,ptrace,init_module,finit_module,reboot,kexec_load",
               "-o", "/tmp/.trace"] + cfg_ep
@@ -176,11 +194,12 @@ def verify(image: str, gpu: bool = False, skip_scan: bool = False, log=print) ->
 
     # 7. canary: unique token must flow through the gate rules of a strict policy
     canary = f"CANARY-{uuid.uuid4().hex[:12]}"
-    strict = Policy(name="verify-strict", output=OutputRules(max_chars=50_000, max_verbatim_span_words=25))
+    binary_out = not (man.get("output", "text/plain").startswith("text/") or man.get("output") == "application/json")
+    strict = Policy(name="verify-strict", output=OutputRules(max_chars=50_000_000 if binary_out else 50_000, max_verbatim_span_words=25))
     op = man["operations"][0]
     fx = mf.read_fixtures(image, op)[0]
-    inp = fx.get("input", "")
-    inp = (inp + f" {canary}") if isinstance(inp, str) else inp
+    inp = _fixture_input(image, fx)
+    inp = (inp + f" {canary}") if isinstance(inp, str) and man.get("input", "text/plain").startswith("text/") else inp
     res = run_job(image, op, inp, fx.get("params"), memory=mem, gpu=gpu, timeout=timeout)
     v = check(strict, op, inp, res.output) if res.ok else None
     canary_ok = bool(res.ok and v and v.allowed)
