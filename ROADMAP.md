@@ -14,7 +14,7 @@ Working order. Engineering first, launch material when media is ready. Updated a
 
 ## Engineering, in order
 1. [x] **Gateway authentication**: per-client API keys, client label in audit, refuse to bind non-localhost without keys
-2. [ ] **Control panel UI**: login, runners with detail, policy editor with YAML validation, trusted keys, enrol tokens, registry/runtime settings, per-runner policy overrides, audit browser with filters, blocked-output alerts with webhook
+2. [x] **Control panel UI**: login, runners with detail, policy editor with YAML validation, trusted keys, enrol tokens, registry/runtime settings, per-runner policy overrides, audit browser with filters, blocked-output alerts with webhook
 3. [ ] **TLS**: built-in cert support for control plane and gateway, documented reverse-proxy alternative
 4. [ ] **Pseudonymization pass** for the `standard` tier (names, numbers, identifiers swapped locally and restored)
 5. [ ] **PDF with layout**: pdf -> docx via LibreOffice, translate, -> pdf

@@ -123,9 +123,17 @@ SEALED_CONTROL=http://control:8480 SEALED_ENROLL_TOKEN=enr_xxx bash -c "$(curl -
 ```
 
 The installer puts Docker in place, trusts the community publisher key, builds and verifies the requested apps
-locally, enrols, and starts gateway + launcher + agent. Dashboard at `http://control:8480/?token=<admin token>`:
-runners online, verified apps per runner, jobs, blocked outputs. Policies and trusted keys pushed from the control
-plane are applied by the agent on the next heartbeat and take precedence over the repo's `policies/`.
+locally, enrols, and starts gateway + launcher + agent.
+
+The control panel at `http://control:8480/` (sign in with the admin token) has: overview, runners with detail and
+per-runner policy/runtime overrides, a policy editor with validation, trusted publisher keys, enrol tokens with the
+ready-made install one-liner, an audit browser with filters and JSON export, alerts with a webhook for blocked
+outputs and app errors, and settings. Everything is also available as JSON under `/v1/admin/*`.
+
+![control panel](docs/img/panel-overview.png)
+
+Policies and trusted keys pushed from the control plane are applied by the agent on the next heartbeat and take
+precedence over the repo's `policies/`.
 
 ## Measured on this machine (RTX 5080, 32 cores)
 

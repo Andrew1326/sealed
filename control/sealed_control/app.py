@@ -35,17 +35,25 @@ def init():
         c.executescript("""
         CREATE TABLE IF NOT EXISTS enroll_tokens(token TEXT PRIMARY KEY, label TEXT, created REAL, used_by TEXT);
         CREATE TABLE IF NOT EXISTS runners(id TEXT PRIMARY KEY, key TEXT, label TEXT, enrolled REAL, last_seen REAL,
-                                           hostname TEXT, version TEXT, gpu INTEGER, apps TEXT, pool TEXT, runtime TEXT, jobs INTEGER DEFAULT 0);
+                                           hostname TEXT, version TEXT, gpu INTEGER, apps TEXT, pool TEXT, runtime TEXT, jobs INTEGER DEFAULT 0, overrides TEXT DEFAULT '{}');
         CREATE TABLE IF NOT EXISTS config(k TEXT PRIMARY KEY, v TEXT);
         CREATE TABLE IF NOT EXISTS audit(runner TEXT, ts TEXT, policy TEXT, image TEXT, image_id TEXT, op TEXT,
                                          input_sha256 TEXT, input_chars INTEGER, output_chars INTEGER, app_ok INTEGER,
-                                         gate TEXT, gate_reason TEXT, duration_s REAL, UNIQUE(runner, ts, input_sha256, op));
+                                         gate TEXT, gate_reason TEXT, duration_s REAL, client TEXT, UNIQUE(runner, ts, input_sha256, op));
         """)
         if not c.execute("SELECT 1 FROM config WHERE k='policies'").fetchone():
             c.execute("INSERT INTO config VALUES('policies', ?)", (json.dumps({}),))
             c.execute("INSERT INTO config VALUES('trusted_keys', ?)", (json.dumps({}),))
             c.execute("INSERT INTO config VALUES('registry', ?)", (json.dumps(""),))
             c.execute("INSERT INTO config VALUES('runtime', ?)", (json.dumps(""),))
+            c.execute("INSERT INTO config VALUES('webhook', ?)", (json.dumps(""),))
+            c.execute("INSERT INTO config VALUES('public_url', ?)", (json.dumps(""),))
+        # migrations for older DBs
+        for col, ddl in (("overrides", "ALTER TABLE runners ADD COLUMN overrides TEXT DEFAULT '{}'"), ):
+            if col not in [r[1] for r in c.execute("PRAGMA table_info(runners)")]:
+                c.execute(ddl)
+        if "client" not in [r[1] for r in c.execute("PRAGMA table_info(audit)")]:
+            c.execute("ALTER TABLE audit ADD COLUMN client TEXT")
 
 
 init()
@@ -154,15 +162,47 @@ def heartbeat(runner_id: str, hb: Heartbeat, r: sqlite3.Row = Depends(runner_aut
         c.execute("UPDATE runners SET last_seen=?,hostname=?,version=?,gpu=?,apps=?,pool=?,runtime=?,jobs=jobs+? WHERE id=?",
                   (time.time(), hb.hostname, hb.version, int(hb.gpu), json.dumps(hb.apps), json.dumps(hb.pool), hb.runtime, len(hb.audit), runner_id))
         for a in hb.audit:
-            c.execute("INSERT OR IGNORE INTO audit VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            c.execute("INSERT OR IGNORE INTO audit VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                       (runner_id, a.get("ts"), a.get("policy"), a.get("image"), a.get("image_id"), a.get("op"), a.get("input_sha256"),
-                       a.get("input_chars"), a.get("output_chars"), int(bool(a.get("app_ok"))), a.get("gate"), a.get("gate_reason"), a.get("duration_s")))
+                       a.get("input_chars"), a.get("output_chars"), int(bool(a.get("app_ok"))), a.get("gate"), a.get("gate_reason"), a.get("duration_s"), a.get("client")))
+        ov = json.loads(c.execute("SELECT overrides FROM runners WHERE id=?", (runner_id,)).fetchone()[0] or "{}")
     cfg = get_config_raw()
-    return {"ok": True, "config": cfg}
+    out = {k: cfg.get(k) for k in ("policies", "trusted_keys", "registry", "runtime")}
+    if ov.get("policy_name") and ov["policy_name"] in (cfg.get("policies") or {}):
+        out["policies"] = {**(cfg.get("policies") or {}), "confidential": cfg["policies"][ov["policy_name"]]}
+    if ov.get("runtime"):
+        out["runtime"] = ov["runtime"]
+    bad = [a for a in hb.audit if a.get("gate") == "block" or not a.get("app_ok")]
+    if bad and cfg.get("webhook"):
+        notify(cfg["webhook"], runner_id, r["label"], bad)
+    return {"ok": True, "config": out}
 
 
-# ---------- dashboard ----------
+def notify(url: str, runner_id: str, label: str, events: list) -> None:
+    import threading
+    import urllib.request
+
+    def send():
+        body = json.dumps({"source": "sealed-control", "runner": runner_id, "label": label, "count": len(events),
+                           "text": f"sealed: {len(events)} blocked/errored job(s) on runner {label or runner_id}",
+                           "events": [{k: a.get(k) for k in ("ts", "op", "image", "gate", "gate_reason", "app_ok", "client")} for a in events[:20]]}).encode()
+        try:
+            urllib.request.urlopen(urllib.request.Request(url, data=body, headers={"content-type": "application/json"}), timeout=10)
+        except Exception as e:
+            print(f"webhook failed: {e}")
+    threading.Thread(target=send, daemon=True).start()
+
+
+PUBLIC_URL = os.environ.get("SEALED_CONTROL_PUBLIC_URL", "http://<control-host>:8480")
+
+
 @app.get("/", response_class=HTMLResponse)
+def root():
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse("/ui/overview", status_code=303)
+
+
+@app.get("/legacy", response_class=HTMLResponse)
 def dashboard(request: Request):
     tok = request.query_params.get("token", "")
     if tok != ADMIN:
@@ -183,6 +223,10 @@ def dashboard(request: Request):
 <h1>sealed control</h1><p>{len(runners)} runners, {sum(r['online'] for r in runners)} online · {total['n'] or 0} jobs reported · {total['b'] or 0} blocked by gate · no document content ever leaves a runner</p>
 <h2>Runners</h2><table><tr><th></th><th>Runner</th><th>Host</th><th>Verified apps</th><th>Compute</th><th>Jobs</th><th>Last seen (UTC)</th></tr>{rows}</table>
 <h2>Recent jobs (metadata only)</h2><table><tr><th>Time</th><th>Runner</th><th>Op</th><th>Image</th><th>Chars</th><th>Gate</th><th>Took</th></tr>{aud}</table>"""
+
+
+from . import ui as _ui  # noqa: E402
+app.include_router(_ui.r)
 
 
 def main():
